@@ -130,8 +130,8 @@ def generate_invoice_image(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        # 🛠️ កែសម្រួលទីតាំង start_y ឱ្យទម្លាក់ចុះមកក្រោមបន្តិច (ពី 0.3165 មក 0.34)
-        start_y = height * 0.340
+        # 🛠️ កែសម្រួលទីតាំង start_y និងការจัดวางអក្សរឱ្យចំកណ្ដាលប្រឡោះក្រឡោន
+        start_y = height * 0.342
         row_height = height * 0.040
         col_name_x = width * 0.15
         col_qty_x = width * 0.60
@@ -153,11 +153,14 @@ def generate_invoice_image(chat_id):
                 else:
                     total_item = parts[3]
             
-            y = start_y + (i * row_height) + (row_height * 0.25)
-            draw.text((col_name_x, y), name, fill="black", font=font_item)
-            draw.text((col_qty_x, y), qty, fill="black", font=font_item, anchor="mm")
-            draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
-            draw.text((col_total_x, y), total_item, fill="black", font=font_item, anchor="mm")
+            # ធ្វើឱ្យអក្សរស្ថិតនៅចំកណ្ដាលប្រឡោះជួរឈរ (Vertical Center)
+            y_name = start_y + (i * row_height) + (row_height * 0.35)
+            y_center = start_y + (i * row_height) + (row_height * 0.5)
+            
+            draw.text((col_name_x, y_name), name, fill="black", font=font_item)
+            draw.text((col_qty_x, y_center), qty, fill="black", font=font_item, anchor="mm")
+            draw.text((col_price_x, y_center), price, fill="black", font=font_item, anchor="mm")
+            draw.text((col_total_x, y_center), total_item, fill="black", font=font_item, anchor="mm")
 
         cust_x = width * 0.23
         draw.text((cust_x, height * 0.818), data.get('name', ''), fill="blue", font=font_cust)
