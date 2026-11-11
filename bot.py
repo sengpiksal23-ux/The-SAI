@@ -23,6 +23,7 @@ def ask_item(chat_id):
     if chat_id not in user_data:
         user_data[chat_id] = {'items_list': []}
         
+    bot.clear_step_handler_by_chat_id(chat_id)
     msg = bot.send_message(chat_id, 
         "🧾 **ប្រព័ន្ធបង្កើតវិក្កយបត្រ THE SAL**\n\n"
         "🛍️ សូមបញ្ចូល **មុខទំនិញ ចំនួន តម្លៃរាយ និងតម្លៃសរុប** តាមទម្រង់នេះ (អាច Paste ច្រើនជួរព្រមគ្នាបាន):\n"
@@ -50,11 +51,9 @@ def process_item(message):
     )
     
     current_items = "\n".join(user_data[chat_id]['items_list'])
-    msg = bot.send_message(chat_id, 
+    bot.send_message(chat_id, 
         f"✅ **ទំនិញដែលបានកត់ត្រា៖**\n{current_items}\n\n"
         "តើបងចង់ធ្វើអ្វីបន្តទៀត?", parse_mode="Markdown", reply_markup=markup)
-    
-    bot.register_next_step_handler(msg, process_item)
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
@@ -63,7 +62,10 @@ def callback_handler(call):
     
     if call.data == "add_more":
         bot.answer_callback_query(call.id, "សូមវាយបញ្ចូល ឬ Paste មុខទំនិញបន្ថែម៖")
-        ask_item(chat_id)
+        
+        # ផ្ញើសារប្រអប់សម្រាប់វាយបញ្ចូលទំនិញបន្ថែម
+        msg = bot.send_message(chat_id, "សូមវាយបញ្ចូលមុខទំនិញបន្ថែម៖\n`ឈ្មោះទំនិញ | ចំនួន | តម្លៃរាយ | តម្លៃសរុប`", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_item)
         
     elif call.data == "calculate_total":
         bot.answer_callback_query(call.id, "កំពុងគណនាតម្លៃសរុប...")
@@ -118,12 +120,10 @@ def generate_invoice_image(chat_id):
                 font_path = p
                 break
         
-        # Open template image
         img = Image.open(img_path).convert("RGB")
         draw = ImageDraw.Draw(img)
         width, height = img.size
 
-        # Load fonts
         try:
             font_item = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
             font_cust = ImageFont.truetype(font_path, int(height * 0.018)) if font_path else ImageFont.load_default()
@@ -132,7 +132,6 @@ def generate_invoice_image(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        # Draw table items
         start_y = height * 0.3165
         row_height = height * 0.040
         col_name_x = width * 0.15
@@ -161,16 +160,12 @@ def generate_invoice_image(chat_id):
             draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
             draw.text((col_total_x, y), total_item, fill="black", font=font_item, anchor="mm")
 
-        # Customer Info (Blue)
         cust_x = width * 0.23
         draw.text((cust_x, height * 0.818), data.get('name', ''), fill="blue", font=font_cust)
         draw.text((cust_x, height * 0.852), data.get('phone', ''), fill="blue", font=font_cust)
         draw.text((cust_x, height * 0.885), data.get('location', ''), fill="blue", font=font_cust)
 
-        # Invoice Total (Red)
         draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
-
-        # Invoice Date (Red)
         draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
 
         output_filename = f"invoice_{chat_id}.png"
