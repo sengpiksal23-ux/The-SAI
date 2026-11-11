@@ -148,17 +148,20 @@ def generate_invoice_image(chat_id):
         rows_html = ""
         for line in lines[:12]:
             parts = [p.strip() for p in line.split('|')]
-            name = parts[0] if len(parts) > 0 else ""
-            qty = parts[1] if len(parts) > 1 else ""
-            price = parts[2] if len(parts) > 2 else ""
+            # ការពារកុំឱ្យទិន្នន័យរំកិលខុសជួរ
+            while len(parts) < 4:
+                parts.append("")
+                
+            name = parts[0]
+            qty = parts[1]
+            price = parts[2]
             
             total_item = ""
-            if len(parts) > 3:
-                match = re.search(r'[\d\.]+', parts[3])
-                if match:
-                    total_item = f"{match.group()}$"
-                else:
-                    total_item = parts[3]
+            match = re.search(r'[\d\.]+', parts[3])
+            if match:
+                total_item = f"{match.group()}$"
+            else:
+                total_item = parts[3]
             
             rows_html += f"""
             <tr>
@@ -247,7 +250,7 @@ def generate_invoice_image(chat_id):
         os.remove(output_path)
         
     except Exception as e:
-        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
+        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងการបង្កើតរូបភាព៖ {str(e)}")
 
     user_data[chat_id] = {'items_list': []}
     ask_item(chat_id)
