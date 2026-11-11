@@ -1,3 +1,2 @@
 pyTelegramBotAPI
-html2image
 Pillow
