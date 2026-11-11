@@ -110,6 +110,8 @@ def generate_invoice_image(chat_id):
 
     try:
         img_path = os.path.join(BASE_DIR, "template.png")
+        
+        # ស្វែងរកហ្វូនខ្មែរ
         font_candidates = ["Battambang-Regular.ttf", "KhmerS4.ttf", "Khmer S4.ttf", "Battambang.ttf", "Siemreap.ttf"]
         font_path = None
         for fc in font_candidates:
@@ -120,53 +122,29 @@ def generate_invoice_image(chat_id):
         
         img = Image.open(img_path).convert("RGB")
         draw = ImageDraw.Draw(img)
-        width, height = img.size
-
-        # កំណត់ Font តាមខ្នាតដែលបងបានផ្ដល់មក
+        
+        # កំណត់ Font តាមទំហំដែលបងចង់បាន
         try:
             font = ImageFont.truetype(font_path, 22) if font_path else ImageFont.load_default()
             font_bold = ImageFont.truetype(font_path, 24) if font_path else ImageFont.load_default()
-            font_total = ImageFont.truetype(font_path, int(height * 0.023)) if font_path else ImageFont.load_default()
+            font_total = ImageFont.truetype(font_path, 26) if font_path else ImageFont.load_default()
         except:
             font = font_bold = font_total = ImageFont.load_default()
 
-        # តារាងមុខទំនិញ
-        start_y = height * 0.342
-        row_height = height * 0.040
-        col_name_x = width * 0.15
-        col_qty_x = width * 0.60
-        col_price_x = width * 0.73
-        col_total_x = width * 0.89
+        # 1. จัดรูปแบบรายการสินค้าทั้งหมดให้ออกมาเป็นข้อความต่อกัน
+        items_lines = data.get('items_list', [])
+        formatted_items = "\n".join(items_lines)
 
-        lines = data.get('items_list', [])
-        for i, line in enumerate(lines[:12]):
-            parts = [p.strip() for p in line.split('|')]
-            name = parts[0] if len(parts) > 0 else ""
-            qty = parts[1] if len(parts) > 1 else ""
-            price = parts[2] if len(parts) > 2 else ""
-            
-            total_item = ""
-            if len(parts) > 3:
-                match = re.search(r'[\d\.]+', parts[3])
-                if match:
-                    total_item = f"{match.group()}$"
-                else:
-                    total_item = parts[3]
-            
-            y_name = start_y + (i * row_height) + (row_height * 0.35)
-            y_center = start_y + (i * row_height) + (row_height * 0.5)
-            
-            draw.text((col_name_x, y_name), name, fill="black", font=font)
-            draw.text((col_qty_x, y_center), qty, fill="black", font=font, anchor="mm")
-            draw.text((col_price_x, y_center), price, fill="black", font=font, anchor="mm")
-            draw.text((col_total_x, y_center), total_item, fill="black", font=font, anchor="mm")
-
-        # 👤 ព័ត៌មានអតិថិជន និងទីតាំង (តាមកូអរដោនេដែលបងចង់បាន)
+        # 2. សរសេរព័ត៌មានទំនិញតាមកូអរដោនេ (150, 450)
+        draw.text((150, 450), formatted_items, fill="black", font=font)
+        
+        # 3. សរសេរឈ្មោះអតិថិជន លេខទូរស័ព្ទ និងទីតាំង តាមកូអរដោនេដែលបងបានកំណត់
         draw.text((200, 850), data.get('name', ''), fill="black", font=font)
         draw.text((250, 910), data.get('phone', ''), fill="blue", font=font)
         draw.text((250, 970), data.get('location', ''), fill="black", font=font)
 
-        # 💵 ទឹកប្រាក់សរុប និង 📅 កាលបរិច្ឆេទ
+        # 4. សរសេរទឹកប្រាក់សរុប និងកាលបរិច្ឆេទ (ផ្នែកខាងស្ដាំខាងក្រោម)
+        width, height = img.size
         draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
         draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font, anchor="mm")
 
@@ -180,7 +158,7 @@ def generate_invoice_image(chat_id):
         os.remove(output_path)
         
     except Exception as e:
-        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
+        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងการបង្កើតរូបភាព៖ {str(e)}")
 
     user_data[chat_id] = {'items_list': []}
     ask_item(chat_id)
