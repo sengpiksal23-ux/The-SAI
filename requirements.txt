@@ -1,0 +1,97 @@
+import telebot
+from telebot import types
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+import os
+
+TOKEN = '9274188079:AAFxdQOp2MlMWCwnrr3yqfhzux5dNp0Ug68'  # ជំនួស Token របស់ Bot អ្នកទីនេះ
+bot = types.TeleBot(TOKEN)
+
+user_data = {}
+
+@bot.message_handler(commands=['start'])
+def send_welcome(message):
+    chat_id = message.chat.id
+    user_data[chat_id] = {}
+    bot.send_message(chat_id, "🧾 **ប្រព័ន្ធបង្កើតវិក្កយបត្រ THE SAL**\n\nសូមបញ្ចូល **ឈ្មោះអតិថិជន**៖", parse_mode="Markdown")
+    bot.register_next_step_handler(message, get_name)
+
+def get_name(message):
+    chat_id = message.chat.id
+    user_data[chat_id]['name'] = message.text
+    bot.send_message(chat_id, "📞 សូមបញ្ចូល **លេខទូរស័ព្ទអ្នកទទួល**៖", parse_mode="Markdown")
+    bot.register_next_step_handler(message, get_phone)
+
+def get_phone(message):
+    chat_id = message.chat.id
+    user_data[chat_id]['phone'] = message.text
+    bot.send_message(chat_id, "📍 សូមបញ្ចូល **ទីតាំងដឹកជញ្ជូន (ឧ. ភ្នំពេញ ឬ Grab)**៖", parse_mode="Markdown")
+    bot.register_next_step_handler(message, get_location)
+
+def get_location(message):
+    chat_id = message.chat.id
+    user_data[chat_id]['location'] = message.text
+    bot.send_message(chat_id, 
+        "🛍️ សូមបញ្ចូល **មុខទំនិញ ចំនួន និងតម្លៃ**\n"
+        "(ឧទាហរណ៍៖ ក្ដារកង់សាគួរ Camry | ចំនួន: 1 | តម្លៃ: 60$)\n"
+        "ប្រសិនបើមានច្រើនមុខ សូមសរសេរពុះបន្ទាត់៖", parse_mode="Markdown")
+    bot.register_next_step_handler(message, get_items)
+
+def get_items(message):
+    chat_id = message.chat.id
+    user_data[chat_id]['items'] = message.text
+    bot.send_message(chat_id, "💵 សូមបញ្ចូល **ទឹកប្រាក់សរុប (Total Amount)** (ឧ. 60$)៖", parse_mode="Markdown")
+    bot.register_next_step_handler(message, generate_invoice_image)
+
+def generate_invoice_image(message):
+    chat_id = message.chat.id
+    total_amount = message.text
+    data = user_data[chat_id]
+    current_date = datetime.now().strftime("ថ្ងៃទី%d ខែ%m ឆ្នាំ%Y")
+
+    try:
+        # បើករូបភាព Template ដើមរបស់អ្នក (ត្រូវដាក់ ፋይልឈ្មោះ template.png ទុកកន្លែងតែមួយជាមួយកូដ)
+        img = Image.open("template.png")
+        draw = ImageDraw.Draw(img)
+        
+        # កំណត់Font (ត្រូវទាញយក Font ភាសាខ្មែរមកដាក់ដូចជា Battambang.ttf ឬ Siemreap.ttf)
+        # ផ្ដល់ចំណាំ៖ អ្នកអាចដាក់ហ្វុនកូដទុកកន្លែងດຽວກັນ
+        font_path = "Battambang-Regular.ttf" # ឬប្តូរទៅតាមឈ្មោះ Font ក្នុងកុំព្យូទ័រអ្នក
+        font = ImageFont.truetype(font_path, 22)
+        font_bold = ImageFont.truetype(font_path, 24)
+        
+        # កូអរដោនេ (X, Y) សម្រាប់សរសេរបញ្ចូលក្នុងរូបภาพ Template របស់អ្នក
+        # (អ្នកអាចកែតម្រូវលេខ X, Y នេះតាមទំហំរូបភាពពិតរបស់អ្នក)
+        
+        # សរសេរព័ត៌មានទំនិញ
+        draw.text((150, 450), data['items'], fill="black", font=font)
+        
+        # សរសេរឈ្មោះអតិថិជន លេខទូរស័ព្ទ និងទីតាំង (ផ្នែកខាងក្រោមនៃវិក្កយបត្រ)
+        draw.text((200, 850), data['name'], fill="black", font=font)
+        draw.text((250, 910), data['phone'], fill="blue", font=font)
+        draw.text((250, 970), data['location'], fill="black", font=font)
+        
+        # សរសេរបញ្ចូលទឹកប្រាក់សរុប និងកាលបរិច្ឆេទ
+        draw.text((700, 850), total_amount, fill="red", font=font_bold)
+        draw.text((680, 970), current_date, fill="black", font=font)
+        
+        # រក្សាទុកជា File រូបភាពថ្មីបណ្តោះអាសន្ន
+        output_path = f"invoice_{chat_id}.png"
+        img.save(output_path)
+        
+        # ផ្ញើរូបភាពទៅកាន់ Telegram Bot
+        with open(output_path, 'rb') as photo:
+            bot.send_photo(chat_id, photo, caption="🧾 នេះជាវិក្កយបត្ររបស់អ្នកហាង THE SAL!")
+            
+        # លុប ፋይልបណ្តោះអាសន្នចេញវិញក្រោយផ្ញើរួច
+        os.remove(output_path)
+        
+    except Exception as e:
+        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}\nសូមប្រាកដថាបានដាក់ឯកសារ template.png និង Font ត្រឹមត្រូវ។")
+
+    # ប៊ូតុងចាប់ផ្តើមសារថ្មី
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(types.KeyboardButton("/start"))
+    bot.send_message(chat_id, "ចង់បង្កើតវិក្កយបត្រថ្មីទៀត?", reply_markup=markup)
+
+bot.infinity_polling()
