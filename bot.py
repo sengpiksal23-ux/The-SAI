@@ -62,8 +62,6 @@ def callback_handler(call):
     
     if call.data == "add_more":
         bot.answer_callback_query(call.id, "សូមវាយបញ្ចូល ឬ Paste មុខទំនិញបន្ថែម៖")
-        
-        # ផ្ញើសារប្រអប់សម្រាប់វាយបញ្ចូលទំនិញបន្ថែម
         msg = bot.send_message(chat_id, "សូមវាយបញ្ចូលមុខទំនិញបន្ថែម៖\n`ឈ្មោះទំនិញ | ចំនួន | តម្លៃរាយ | តម្លៃសរុប`", parse_mode="Markdown")
         bot.register_next_step_handler(msg, process_item)
         
@@ -132,7 +130,8 @@ def generate_invoice_image(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        start_y = height * 0.3165
+        # 🛠️ កែសម្រួលទីតាំង start_y ឱ្យទម្លាក់ចុះមកក្រោមបន្តិច (ពី 0.3165 មក 0.34)
+        start_y = height * 0.340
         row_height = height * 0.040
         col_name_x = width * 0.15
         col_qty_x = width * 0.60
