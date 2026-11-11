@@ -11,7 +11,7 @@ bot = telebot.TeleBot(TOKEN)
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-hti = Html2Image(output_path=BASE_DIR)
+hti = Html2Image(output_path=BASE_DIR, browser_executable='/usr/bin/chromium')
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
