@@ -1,7 +1,8 @@
 import telebot
 from telebot import types
 from datetime import datetime
-from PIL import Image, ImageDraw, ImageFont
+from html2image import Html2Image
+import base64
 import os
 import re
 
@@ -10,6 +11,7 @@ bot = telebot.TeleBot(TOKEN)
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+hti = Html2Image(output_path=BASE_DIR)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -111,8 +113,7 @@ def generate_invoice_image(chat_id):
     try:
         img_path = os.path.join(BASE_DIR, "template.png")
         
-        # ស្វែងរកហ្វូនខ្មែរ
-        font_candidates = ["Battambang-Regular.ttf", "KhmerS4.ttf", "Khmer S4.ttf", "Battambang.ttf", "Siemreap.ttf"]
+        font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
         font_path = None
         for fc in font_candidates:
             p = os.path.join(BASE_DIR, fc)
@@ -120,45 +121,133 @@ def generate_invoice_image(chat_id):
                 font_path = p
                 break
         
-        img = Image.open(img_path).convert("RGB")
-        draw = ImageDraw.Draw(img)
+        with open(img_path, "rb") as image_file:
+            bg_encoded = base64.b64encode(image_file.read()).decode('utf-8')
+        bg_data_uri = f"data:image/png;base64,{bg_encoded}"
         
-        # កំណត់ Font តាមទំហំដែលបងចង់បាន
-        try:
-            font = ImageFont.truetype(font_path, 22) if font_path else ImageFont.load_default()
-            font_bold = ImageFont.truetype(font_path, 24) if font_path else ImageFont.load_default()
-            font_total = ImageFont.truetype(font_path, 26) if font_path else ImageFont.load_default()
-        except:
-            font = font_bold = font_total = ImageFont.load_default()
-
-        # 1. จัดรูปแบบรายการสินค้าทั้งหมดให้ออกมาเป็นข้อความต่อกัน
-        items_lines = data.get('items_list', [])
-        formatted_items = "\n".join(items_lines)
-
-        # 2. សរសេរព័ត៌មានទំនិញតាមកូអរដោនេ (150, 450)
-        draw.text((150, 450), formatted_items, fill="black", font=font)
+        font_css = "font-family: sans-serif;"
+        if font_path:
+            with open(font_path, "rb") as font_file:
+                font_encoded = base64.b64encode(font_file.read()).decode('utf-8')
+            font_data_uri = f"data:font/ttf;base64,{font_encoded}"
+            font_css = f"""
+            @font-face {{
+                font-family: 'CustomKhmerFont';
+                src: url('{font_data_uri}') format('truetype');
+            }}
+            body {{
+                font-family: 'CustomKhmerFont', 'Khmer S4', 'KhmerS4', sans-serif;
+            }}
+            """
         
-        # 3. សរសេរឈ្មោះអតិថិជន លេខទូរស័ព្ទ និងទីតាំង តាមកូអរដោនេដែលបងបានកំណត់
-        draw.text((200, 850), data.get('name', ''), fill="black", font=font)
-        draw.text((250, 910), data.get('phone', ''), fill="blue", font=font)
-        draw.text((250, 970), data.get('location', ''), fill="black", font=font)
+        from PIL import Image
+        with Image.open(img_path) as img:
+            width, height = img.size
 
-        # 4. សរសេរទឹកប្រាក់សរុប និងកាលបរិច្ឆេទ (ផ្នែកខាងស្ដាំខាងក្រោម)
-        width, height = img.size
-        draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
-        draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font, anchor="mm")
+        lines = data.get('items_list', [])
+        rows_html = ""
+        for line in lines[:12]:
+            parts = [p.strip() for p in line.split('|')]
+            name = parts[0] if len(parts) > 0 else ""
+            qty = parts[1] if len(parts) > 1 else ""
+            price = parts[2] if len(parts) > 2 else ""
+            
+            total_item = ""
+            if len(parts) > 3:
+                match = re.search(r'[\d\.]+', parts[3])
+                if match:
+                    total_item = f"{match.group()}$"
+                else:
+                    total_item = parts[3]
+            
+            rows_html += f"""
+            <tr>
+                <td class="col-name"><span>{name}</span></td>
+                <td class="col-qty"><span>{qty}</span></td>
+                <td class="col-price"><span>{price}</span></td>
+                <td class="col-total"><span>{total_item}</span></td>
+            </tr>
+            """
+        
+        remaining = 12 - len(lines[:12])
+        for _ in range(remaining):
+            rows_html += '<tr><td></td><td></td><td></td><td></td></tr>'
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html lang="km">
+        <head>
+            <meta charset="UTF-8">
+            <style>
+                {font_css}
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    width: {width}px;
+                    height: {height}px;
+                    background-image: url('{bg_data_uri}');
+                    background-size: 100% 100%;
+                    position: relative;
+                }}
+                .items-table {{
+                    position: absolute;
+                    top: {height * 0.3165}px;
+                    left: {width * 0.14}px;
+                    width: {width * 0.74}px;
+                    border-collapse: collapse;
+                    table-layout: fixed;
+                }}
+                .items-table tr {{
+                    height: {height * 0.040}px;
+                }}
+                .items-table td {{
+                    overflow: hidden;
+                    white-space: nowrap;
+                    text-overflow: ellipsis;
+                }}
+                .col-name {{ width: 52%; text-align: left; padding-left: 10px; font-size: {height * 0.016}px; font-weight: bold; }}
+                .col-qty {{ width: 12%; text-align: center; font-size: {height * 0.016}px; font-weight: bold; }}
+                .col-price {{ width: 18%; text-align: center; font-size: {height * 0.016}px; font-weight: bold; }}
+                .col-total {{ width: 18%; text-align: center; font-size: {height * 0.016}px; font-weight: bold; }}
+                
+                .cust-name {{ position: absolute; top: {height * 0.818}px; left: {width * 0.23}px; font-size: {height * 0.018}px; font-weight: bold; color: blue; }}
+                .cust-phone {{ position: absolute; top: {height * 0.852}px; left: {width * 0.23}px; font-size: {height * 0.018}px; font-weight: bold; color: blue; }}
+                .cust-loc {{ position: absolute; top: {height * 0.885}px; left: {width * 0.23}px; font-size: {height * 0.018}px; font-weight: bold; color: blue; }}
+                
+                .invoice-total {{ position: absolute; top: {height * 0.822}px; left: {width * 0.84}px; transform: translate(-50%, -50%); font-size: {height * 0.023}px; font-weight: bold; color: red; }}
+                .invoice-date {{ position: absolute; top: {height * 0.876}px; left: {width * 0.77}px; transform: translate(-50%, -50%); font-size: {height * 0.016}px; font-weight: bold; color: red; white-space: nowrap; }}
+            </style>
+        </head>
+        <body>
+            <table class="items-table">
+                {rows_html}
+            </table>
+            
+            <div class="cust-name">{data['name']}</div>
+            <div class="cust-phone">{data['phone']}</div>
+            <div class="cust-loc">{data['location']}</div>
+            
+            <div class="invoice-total">{data['total']}</div>
+            <div class="invoice-date">{current_date}</div>
+        </body>
+        </html>
+        """
 
         output_filename = f"invoice_{chat_id}.png"
-        output_path = os.path.join(BASE_DIR, output_filename)
-        img.save(output_path)
+        hti.screenshot(
+            html_str=html_content,
+            save_as=output_filename,
+            size=(width, height)
+        )
         
+        output_path = os.path.join(BASE_DIR, output_filename)
         with open(output_path, 'rb') as photo:
             bot.send_photo(chat_id, photo, caption="🧾 នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!")
             
         os.remove(output_path)
         
     except Exception as e:
-        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងการបង្កើតរូបភាព៖ {str(e)}")
+        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
 
     user_data[chat_id] = {'items_list': []}
     ask_item(chat_id)
