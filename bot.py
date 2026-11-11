@@ -110,7 +110,7 @@ def generate_invoice_image(chat_id):
 
     try:
         img_path = os.path.join(BASE_DIR, "template.png")
-        font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
+        font_candidates = ["Battambang-Regular.ttf", "KhmerS4.ttf", "Khmer S4.ttf", "Battambang.ttf", "Siemreap.ttf"]
         font_path = None
         for fc in font_candidates:
             p = os.path.join(BASE_DIR, fc)
@@ -122,15 +122,15 @@ def generate_invoice_image(chat_id):
         draw = ImageDraw.Draw(img)
         width, height = img.size
 
+        # កំណត់ Font តាមខ្នាតដែលបងបានផ្ដល់មក
         try:
-            font_item = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
-            font_cust = ImageFont.truetype(font_path, int(height * 0.018)) if font_path else ImageFont.load_default()
+            font = ImageFont.truetype(font_path, 22) if font_path else ImageFont.load_default()
+            font_bold = ImageFont.truetype(font_path, 24) if font_path else ImageFont.load_default()
             font_total = ImageFont.truetype(font_path, int(height * 0.023)) if font_path else ImageFont.load_default()
-            font_date = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
         except:
-            font_item = font_cust = font_total = font_date = ImageFont.load_default()
+            font = font_bold = font_total = ImageFont.load_default()
 
-        # 🛠️ កែសម្រួលទីតាំង start_y និងការจัดวางអក្សរឱ្យចំកណ្ដាលប្រឡោះក្រឡោន
+        # តារាងមុខទំនិញ
         start_y = height * 0.342
         row_height = height * 0.040
         col_name_x = width * 0.15
@@ -153,22 +153,22 @@ def generate_invoice_image(chat_id):
                 else:
                     total_item = parts[3]
             
-            # ធ្វើឱ្យអក្សរស្ថិតនៅចំកណ្ដាលប្រឡោះជួរឈរ (Vertical Center)
             y_name = start_y + (i * row_height) + (row_height * 0.35)
             y_center = start_y + (i * row_height) + (row_height * 0.5)
             
-            draw.text((col_name_x, y_name), name, fill="black", font=font_item)
-            draw.text((col_qty_x, y_center), qty, fill="black", font=font_item, anchor="mm")
-            draw.text((col_price_x, y_center), price, fill="black", font=font_item, anchor="mm")
-            draw.text((col_total_x, y_center), total_item, fill="black", font=font_item, anchor="mm")
+            draw.text((col_name_x, y_name), name, fill="black", font=font)
+            draw.text((col_qty_x, y_center), qty, fill="black", font=font, anchor="mm")
+            draw.text((col_price_x, y_center), price, fill="black", font=font, anchor="mm")
+            draw.text((col_total_x, y_center), total_item, fill="black", font=font, anchor="mm")
 
-        cust_x = width * 0.23
-        draw.text((cust_x, height * 0.818), data.get('name', ''), fill="blue", font=font_cust)
-        draw.text((cust_x, height * 0.852), data.get('phone', ''), fill="blue", font=font_cust)
-        draw.text((cust_x, height * 0.885), data.get('location', ''), fill="blue", font=font_cust)
+        # 👤 ព័ត៌មានអតិថិជន និងទីតាំង (តាមកូអរដោនេដែលបងចង់បាន)
+        draw.text((200, 850), data.get('name', ''), fill="black", font=font)
+        draw.text((250, 910), data.get('phone', ''), fill="blue", font=font)
+        draw.text((250, 970), data.get('location', ''), fill="black", font=font)
 
+        # 💵 ទឹកប្រាក់សរុប និង 📅 កាលបរិច្ឆេទ
         draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
-        draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
+        draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font, anchor="mm")
 
         output_filename = f"invoice_{chat_id}.png"
         output_path = os.path.join(BASE_DIR, output_filename)
