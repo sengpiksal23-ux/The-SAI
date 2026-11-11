@@ -11,8 +11,10 @@ bot = telebot.TeleBot(TOKEN)
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# កំណត់ Html2Image ឱ្យស្គាល់ Chromium លើ Cloud (Render)
-hti = Html2Image(output_path=BASE_DIR, browser_executable='chromium')
+hti = Html2Image(
+    output_path=BASE_DIR, 
+    browser_executable='/usr/bin/chromium-browser'
+)
 hti.browser.flags = ['--no-sandbox', '--disable-dev-shm-usage', '--headless']
 
 @bot.message_handler(commands=['start'])
