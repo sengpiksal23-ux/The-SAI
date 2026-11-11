@@ -1,8 +1,7 @@
 import telebot
 from telebot import types
 from datetime import datetime
-from html2image import Html2Image
-import base64
+from PIL import Image, ImageDraw, ImageFont
 import os
 import re
 
@@ -11,11 +10,6 @@ bot = telebot.TeleBot(TOKEN)
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-hti = Html2Image(
-    output_path=BASE_DIR, 
-    browser_executable='/usr/bin/chromium-browser'
-)
-hti.browser.flags = ['--no-sandbox', '--disable-dev-shm-usage', '--headless']
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -116,7 +110,6 @@ def generate_invoice_image(chat_id):
 
     try:
         img_path = os.path.join(BASE_DIR, "template.png")
-        
         font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
         font_path = None
         for fc in font_candidates:
@@ -125,32 +118,30 @@ def generate_invoice_image(chat_id):
                 font_path = p
                 break
         
-        with open(img_path, "rb") as image_file:
-            bg_encoded = base64.b64encode(image_file.read()).decode('utf-8')
-        bg_data_uri = f"data:image/png;base64,{bg_encoded}"
-        
-        font_css = "font-family: sans-serif;"
-        if font_path:
-            with open(font_path, "rb") as font_file:
-                font_encoded = base64.b64encode(font_file.read()).decode('utf-8')
-            font_data_uri = f"data:font/ttf;base64,{font_encoded}"
-            font_css = f"""
-            @font-face {{
-                font-family: 'CustomKhmerFont';
-                src: url('{font_data_uri}') format('truetype');
-            }}
-            body {{
-                font-family: 'CustomKhmerFont', 'Khmer S4', 'KhmerS4', sans-serif;
-            }}
-            """
-        
-        from PIL import Image
-        with Image.open(img_path) as img:
-            width, height = img.size
+        # Open template image
+        img = Image.open(img_path).convert("RGB")
+        draw = ImageDraw.Draw(img)
+        width, height = img.size
+
+        # Load fonts
+        try:
+            font_item = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
+            font_cust = ImageFont.truetype(font_path, int(height * 0.018)) if font_path else ImageFont.load_default()
+            font_total = ImageFont.truetype(font_path, int(height * 0.023)) if font_path else ImageFont.load_default()
+            font_date = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
+        except:
+            font_item = font_cust = font_total = font_date = ImageFont.load_default()
+
+        # Draw table items
+        start_y = height * 0.3165
+        row_height = height * 0.040
+        col_name_x = width * 0.15
+        col_qty_x = width * 0.60
+        col_price_x = width * 0.73
+        col_total_x = width * 0.89
 
         lines = data.get('items_list', [])
-        rows_html = ""
-        for line in lines[:12]:
+        for i, line in enumerate(lines[:12]):
             parts = [p.strip() for p in line.split('|')]
             name = parts[0] if len(parts) > 0 else ""
             qty = parts[1] if len(parts) > 1 else ""
@@ -164,88 +155,28 @@ def generate_invoice_image(chat_id):
                 else:
                     total_item = parts[3]
             
-            rows_html += f"""
-            <tr>
-                <td class="col-name"><span>{name}</span></td>
-                <td class="col-qty"><span>{qty}</span></td>
-                <td class="col-price"><span>{price}</span></td>
-                <td class="col-total"><span>{total_item}</span></td>
-            </tr>
-            """
-        
-        remaining = 12 - len(lines[:12])
-        for _ in range(remaining):
-            rows_html += '<tr><td></td><td></td><td></td><td></td></tr>'
+            y = start_y + (i * row_height) + (row_height * 0.25)
+            draw.text((col_name_x, y), name, fill="black", font=font_item)
+            draw.text((col_qty_x, y), qty, fill="black", font=font_item, anchor="mm")
+            draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
+            draw.text((col_total_x, y), total_item, fill="black", font=font_item, anchor="mm")
 
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="km">
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                {font_css}
-                body {{
-                    margin: 0;
-                    padding: 0;
-                    width: {width}px;
-                    height: {height}px;
-                    background-image: url('{bg_data_uri}');
-                    background-size: 100% 100%;
-                    position: relative;
-                }}
-                .items-table {{
-                    position: absolute;
-                    top: {height * 0.3165}px;
-                    left: {width * 0.14}px;
-                    width: {width * 0.74}px;
-                    border-collapse: collapse;
-                    table-layout: fixed;
-                }}
-                .items-table tr {{
-                    height: {height * 0.040}px;
-                }}
-                .items-table td {{
-                    overflow: hidden;
-                    white-space: nowrap;
-                    text-overflow: ellipsis;
-                }}
-                .col-name {{ width: 52%; text-align: left; padding-left: 10px; font-size: {height * 0.016}px; font-weight: bold; }}
-                .col-qty {{ width: 12%; text-align: center; font-size: {height * 0.016}px; font-weight: bold; }}
-                .col-price {{ width: 18%; text-align: center; font-size: {height * 0.016}px; font-weight: bold; }}
-                .col-total {{ width: 18%; text-align: center; font-size: {height * 0.016}px; font-weight: bold; }}
-                
-                /* 🎨 កែសម្រួលពណ៌តាមលំនាំ៖ ព័ត៌មានអតិថិជនពណ៌ខៀវ, ទឹកប្រាក់សរុប និងកាលបរិច្ឆេទពណ៌ក្រហម */
-                .cust-name {{ position: absolute; top: {height * 0.818}px; left: {width * 0.23}px; font-size: {height * 0.018}px; font-weight: bold; color: blue; }}
-                .cust-phone {{ position: absolute; top: {height * 0.852}px; left: {width * 0.23}px; font-size: {height * 0.018}px; font-weight: bold; color: blue; }}
-                .cust-loc {{ position: absolute; top: {height * 0.885}px; left: {width * 0.23}px; font-size: {height * 0.018}px; font-weight: bold; color: blue; }}
-                
-                .invoice-total {{ position: absolute; top: {height * 0.822}px; left: {width * 0.84}px; transform: translate(-50%, -50%); font-size: {height * 0.023}px; font-weight: bold; color: red; }}
-                .invoice-date {{ position: absolute; top: {height * 0.876}px; left: {width * 0.77}px; transform: translate(-50%, -50%); font-size: {height * 0.016}px; font-weight: bold; color: red; white-space: nowrap; }}
-            </style>
-        </head>
-        <body>
-            <table class="items-table">
-                {rows_html}
-            </table>
-            
-            <div class="cust-name">{data['name']}</div>
-            <div class="cust-phone">{data['phone']}</div>
-            <div class="cust-loc">{data['location']}</div>
-            
-            <div class="invoice-total">{data['total']}</div>
-            <div class="invoice-date">{current_date}</div>
-        </body>
-        </html>
-        """
+        # Customer Info (Blue)
+        cust_x = width * 0.23
+        draw.text((cust_x, height * 0.818), data.get('name', ''), fill="blue", font=font_cust)
+        draw.text((cust_x, height * 0.852), data.get('phone', ''), fill="blue", font=font_cust)
+        draw.text((cust_x, height * 0.885), data.get('location', ''), fill="blue", font=font_cust)
+
+        # Invoice Total (Red)
+        draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
+
+        # Invoice Date (Red)
+        draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
 
         output_filename = f"invoice_{chat_id}.png"
-        hti.screenshot(
-            html_str=html_content,
-            save_as=output_filename,
-            size=(width, height)
-        )
-        
         output_path = os.path.join(BASE_DIR, output_filename)
+        img.save(output_path)
+        
         with open(output_path, 'rb') as photo:
             bot.send_photo(chat_id, photo, caption="🧾 នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!")
             
