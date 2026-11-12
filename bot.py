@@ -123,14 +123,14 @@ def generate_invoice_image(chat_id):
         width, height = img.size
 
         try:
-            font_item = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
+            # 🛠️ បង្កើនទំហំ Font មុខទំនិញឱ្យធំជាងមុនបន្តិច (ពី 0.016 មក 0.0175)
+            font_item = ImageFont.truetype(font_path, int(height * 0.0175)) if font_path else ImageFont.load_default()
             font_cust = ImageFont.truetype(font_path, int(height * 0.018)) if font_path else ImageFont.load_default()
             font_total = ImageFont.truetype(font_path, int(height * 0.023)) if font_path else ImageFont.load_default()
             font_date = ImageFont.truetype(font_path, int(height * 0.016)) if font_path else ImageFont.load_default()
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        # 🛠️ កែសម្រួល start_y ឱ្យខិតឡើងលើបន្តិច (ពី 0.338 មក 0.330)
         start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
