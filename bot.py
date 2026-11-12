@@ -21,7 +21,6 @@ def send_welcome(message):
     chat_id = message.chat.id
     user_data[chat_id] = {'items_list': []}
     
-    # ផ្ញើ Logo ស្វាគមន៍ (ប្រសិនបើមាន file logo.png នៅលើ Server)
     logo_path = os.path.join(BASE_DIR, "logo.png")
     if os.path.exists(logo_path):
         with open(logo_path, 'rb') as logo:
@@ -140,7 +139,6 @@ def generate_invoice_and_dynamic_qr(chat_id):
         width, height = img.size
 
         try:
-            # ទំហំ Font មុខទំនិញ
             font_item = ImageFont.truetype(font_path, int(height * 0.0175)) if font_path else ImageFont.load_default()
             font_cust = ImageFont.truetype(font_path, int(height * 0.018)) if font_path else ImageFont.load_default()
             font_total = ImageFont.truetype(font_path, int(height * 0.023)) if font_path else ImageFont.load_default()
@@ -148,13 +146,12 @@ def generate_invoice_and_dynamic_qr(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        # 🛠️ កែសម្រួលទីតាំង X-coordinates សម្រាប់ក្រឡោនទាំង ៣ ឱ្យខិតមកកណ្ដាលបន្តិច
         start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
-        col_qty_x = width * 0.57  # កែពី 0.60 មក 0.57
-        col_price_x = width * 0.71 # កែពី 0.73 មក 0.71
-        col_total_x = width * 0.87 # កែពី 0.89 មក 0.87
+        col_qty_x = width * 0.57
+        col_price_x = width * 0.71
+        col_total_x = width * 0.87
 
         lines = data.get('items_list', [])
         for i, line in enumerate(lines[:12]):
@@ -177,12 +174,18 @@ def generate_invoice_and_dynamic_qr(chat_id):
             draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
             draw.text((col_total_x, y), total_item, fill="black", font=font_item, anchor="mm")
 
+        # 🛠️ បំបែកអក្សរអតិថិជនចេញជា Variable ដាច់ដោយឡែកដើម្បីការពារ SyntaxError
         cust_x = width * 0.23
-        draw.text((cust_x, height * 0.818), data.get('name', ''), fill="blue", font=font_cust)
-        draw.text((cust_x, height * 0.852), data.get('phone', ''), fill="blue", font=font_cust)
-        draw.text((cust_x, height * 0.885), data.get('location', ''), fill="blue", font_cust)
+        c_name = data.get('name', '')
+        c_phone = data.get('phone', '')
+        c_location = data.get('location', '')
+        c_total = data.get('total', '')
 
-        draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
+        draw.text((cust_x, height * 0.818), c_name, fill="blue", font=font_cust)
+        draw.text((cust_x, height * 0.852), c_phone, fill="blue", font=font_cust)
+        draw.text((cust_x, height * 0.885), c_location, fill="blue", font=font_cust)
+
+        draw.text((width * 0.84, height * 0.822), c_total, fill="red", font=font_total, anchor="mm")
         draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
 
         invoice_filename = f"invoice_{chat_id}.png"
@@ -214,7 +217,7 @@ def generate_invoice_and_dynamic_qr(chat_id):
         os.remove(qr_path)
         
     except Exception as e:
-        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងการបង្កើតរូបភាព៖ {str(e)}")
+        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
 
     user_data[chat_id] = {'items_list': []}
     ask_item(chat_id)
