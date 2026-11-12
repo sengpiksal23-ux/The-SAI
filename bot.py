@@ -130,7 +130,6 @@ def generate_invoice_image(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        # 🛠️ កែសម្រួលទីតាំង start_y និង offset ឱ្យអក្សររំកិលចុះក្រោមបន្តិចល្មមស្អាត
         start_y = height * 0.338
         row_height = height * 0.040
         col_name_x = width * 0.15
@@ -153,8 +152,9 @@ def generate_invoice_image(chat_id):
                 else:
                     total_item = parts[3]
             
-            y = start_y + (i * row_height) + (row_height * 0.35)
-            draw.text((col_name_x, y), name, fill="black", font=font_item)
+            # 🛠️ កំណត់ទីតាំង y ให้อยู่กึ่งกลางแถวพอดี និងใช้ anchor ให้อยู่บรรทัดเดียวกันเป๊ะ
+            y = start_y + (i * row_height) + (row_height * 0.5)
+            draw.text((col_name_x, y), name, fill="black", font=font_item, anchor="lm")
             draw.text((col_qty_x, y), qty, fill="black", font=font_item, anchor="mm")
             draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
             draw.text((col_total_x, y), total_item, fill="black", font=font_item, anchor="mm")
