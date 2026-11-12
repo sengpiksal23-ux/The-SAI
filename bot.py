@@ -4,17 +4,12 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import os
 import re
-import qrcode
 
 TOKEN = '9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q'
 bot = telebot.TeleBot(TOKEN)
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# 🇰🇭 ព័ត៌មានគណនី ABA របស់ហាង THE SAL (យោងតាម QR របស់ប្រូ)
-ABA_ACCOUNT = "005193074"
-MERCHANT_NAME = "YI LY CHORNG Seng piksal"
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -85,7 +80,6 @@ def callback_handler(call):
                         except ValueError:
                             pass
                             
-        user_data[chat_id]['total_raw'] = total_sum
         user_data[chat_id]['total'] = f"{int(total_sum) if total_sum.is_integer() else total_sum}$"
         
         bot.send_message(chat_id, f"💵 **ទឹកប្រាក់សរុបគណនាបានស្វ័យប្រវត្តិ៖** `{user_data[chat_id]['total']}`", parse_mode="Markdown")
@@ -108,14 +102,13 @@ def get_phone(message):
 def get_location(message):
     chat_id = message.chat.id
     user_data[chat_id]['location'] = message.text
-    generate_invoice_and_dynamic_qr(chat_id)
+    generate_invoice_image(chat_id)
 
-def generate_invoice_and_dynamic_qr(chat_id):
+def generate_invoice_image(chat_id):
     data = user_data[chat_id]
     current_date = "កាលបរិច្ឆេទ : " + datetime.now().strftime("%d / %m / %Y")
 
     try:
-        # 1. បង្កើតរូបភាពវិក្កយបត្រ (Invoice Image)
         img_path = os.path.join(BASE_DIR, "template.png")
         font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
         font_path = None
@@ -137,7 +130,7 @@ def generate_invoice_and_dynamic_qr(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
-        start_y = height * 0.325
+        start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
         col_qty_x = width * 0.60
@@ -159,7 +152,7 @@ def generate_invoice_and_dynamic_qr(chat_id):
                 else:
                     total_item = parts[3]
             
-            y = start_y + (i * row_height) + (row_height * 0.18)
+            y = start_y + (i * row_height) + (row_height * 0.28)
             draw.text((col_name_x, y), name, fill="black", font=font_item)
             draw.text((col_qty_x, y), qty, fill="black", font=font_item, anchor="mm")
             draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
@@ -173,36 +166,15 @@ def generate_invoice_and_dynamic_qr(chat_id):
         draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
         draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
 
-        invoice_filename = f"invoice_{chat_id}.png"
-        invoice_path = os.path.join(BASE_DIR, invoice_filename)
-        img.save(invoice_path)
-
-        # 2. បង្កើត Dynamic QR Code ជាមួយចំនួនទឹកប្រាក់សរុប (ABA Pay Link)
-        total_amount = data.get('total_raw', 0)
-        formatted_amount = f"{total_amount:.2f}"
+        output_filename = f"invoice_{chat_id}.png"
+        output_path = os.path.join(BASE_DIR, output_filename)
+        img.save(output_path)
         
-        # Link សម្រាប់ទូទាត់ប្រាក់ ABA ដែលកំណត់ចំនួនទឹកប្រាក់ស្រាប់
-        aba_pay_url = f"https://pay.ababank.com/pay?amount={formatted_amount}&currency=USD&to={ABA_ACCOUNT}&name={MERCHANT_NAME}"
-        
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(aba_pay_url)
-        qr.make(fit=True)
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        
-        qr_filename = f"dynamic_qr_{chat_id}.png"
-        qr_path = os.path.join(BASE_DIR, qr_filename)
-        qr_img.save(qr_path)
-
-        # 3. ផ្ញើរូបភាពទាំងពីរទៅកាន់ Telegram
-        with open(invoice_path, 'rb') as inv_photo:
-            bot.send_photo(chat_id, inv_photo, caption="🧾 **វិក្កយបត្រផ្លូវការហាង THE SAL**", parse_mode="Markdown")
+        # ផ្ញើเฉพาะរូបភាពវិក្កយបត្រជូនអតិថិជន
+        with open(output_path, 'rb') as photo:
+            bot.send_photo(chat_id, photo, caption="🧾 នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!")
             
-        with open(qr_path, 'rb') as qr_photo:
-            bot.send_photo(chat_id, qr_photo, caption=f"🇰🇭 **ABA Pay (កំណត់ទឹកប្រាក់ស្រាប់៖ {formatted_amount} USD)**\nសូមស្កេន QR នេះដើម្បីទូទាត់ប្រាក់ជូនហាង THE SAL!", parse_mode="Markdown")
-            
-        # លុប File បណ្ដោះអាសន្នចេញពី Server
-        os.remove(invoice_path)
-        os.remove(qr_path)
+        os.remove(output_path)
         
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
