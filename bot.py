@@ -4,9 +4,14 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import os
 import re
+import qrcode
 
 TOKEN = '9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q'
 bot = telebot.TeleBot(TOKEN)
+
+# 🇰🇭 ព័ត៌មានគណនី ABA របស់ហាង THE SAL
+ABA_ACCOUNT = "005193074"
+MERCHANT_NAME = "YI LY CHORNG Seng piksal"
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +20,15 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def send_welcome(message):
     chat_id = message.chat.id
     user_data[chat_id] = {'items_list': []}
+    
+    # ផ្ញើ Logo ស្វាគមន៍ (ប្រសិនបើមាន file logo.png នៅលើ Server)
+    logo_path = os.path.join(BASE_DIR, "logo.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, 'rb') as logo:
+            bot.send_photo(chat_id, logo, caption=f"👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
+    else:
+        bot.send_message(chat_id, f"👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
+    
     ask_item(chat_id)
 
 def ask_item(chat_id):
@@ -25,11 +39,11 @@ def ask_item(chat_id):
         
     bot.clear_step_handler_by_chat_id(chat_id)
     msg = bot.send_message(chat_id, 
-        "🧾 **ប្រព័ន្ធបង្កើតវិក្កយបត្រ THE SAL**\n\n"
         "🛍️ សូមបញ្ចូល **មុខទំនិញ ចំនួន តម្លៃរាយ និងតម្លៃសរុប** តាមទម្រង់នេះ (អាច Paste ច្រើនជួរព្រមគ្នាបាន):\n"
         "`ឈ្មោះទំនិញ | ចំនួន | តម្លៃរាយ | តម្លៃសរុប`\n\n"
         "ឧទាហរណ៍:\n"
-        "ប៊ូសចង្កូត | 1 | 15$ | 15$", parse_mode="Markdown")
+        "ប៊ូសចង្កូត | 1 | 15$ | 15$ \n"
+        "សំបកកង់ | 4 | 50$ | 200$", parse_mode="Markdown")
     bot.register_next_step_handler(msg, process_item)
 
 def process_item(message):
@@ -47,7 +61,7 @@ def process_item(message):
     markup = types.InlineKeyboardMarkup()
     markup.row(
         types.InlineKeyboardButton("➕ បន្ថែមមុខទំនិញទៀត", callback_data="add_more"),
-        types.InlineKeyboardButton("🧮 សរុបទឹកប្រាក់ (Auto Total)", callback_data="calculate_total")
+        types.InlineKeyboardButton("🧮 បញ្ចប់ & គណនាសរុប (Auto Total)", callback_data="calculate_total")
     )
     
     current_items = "\n".join(user_data[chat_id]['items_list'])
@@ -80,7 +94,9 @@ def callback_handler(call):
                         except ValueError:
                             pass
                             
+        formatted_total = f"{int(total_sum) if total_sum.is_integer() else total_sum}.00 USD"
         user_data[chat_id]['total'] = f"{int(total_sum) if total_sum.is_integer() else total_sum}$"
+        user_data[chat_id]['total_raw'] = total_sum
         
         bot.send_message(chat_id, f"💵 **ទឹកប្រាក់សរុបគណនាបានស្វ័យប្រវត្តិ៖** `{user_data[chat_id]['total']}`", parse_mode="Markdown")
         
@@ -102,13 +118,14 @@ def get_phone(message):
 def get_location(message):
     chat_id = message.chat.id
     user_data[chat_id]['location'] = message.text
-    generate_invoice_image(chat_id)
+    generate_invoice_and_dynamic_qr(chat_id)
 
-def generate_invoice_image(chat_id):
+def generate_invoice_and_dynamic_qr(chat_id):
     data = user_data[chat_id]
     current_date = "កាលបរិច្ឆេទ : " + datetime.now().strftime("%d / %m / %Y")
 
     try:
+        # 1. បង្កើតរូបភាពវិក្កយបត្រ (Invoice Image)
         img_path = os.path.join(BASE_DIR, "template.png")
         font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
         font_path = None
@@ -123,7 +140,7 @@ def generate_invoice_image(chat_id):
         width, height = img.size
 
         try:
-            # 🛠️ បង្កើនទំហំ Font មុខទំនិញឱ្យធំជាងមុនបន្តិច (ពី 0.016 មក 0.0175)
+            # ទំហំ Font មុខទំនិញ
             font_item = ImageFont.truetype(font_path, int(height * 0.0175)) if font_path else ImageFont.load_default()
             font_cust = ImageFont.truetype(font_path, int(height * 0.018)) if font_path else ImageFont.load_default()
             font_total = ImageFont.truetype(font_path, int(height * 0.023)) if font_path else ImageFont.load_default()
@@ -131,12 +148,13 @@ def generate_invoice_image(chat_id):
         except:
             font_item = font_cust = font_total = font_date = ImageFont.load_default()
 
+        # 🛠️ កែសម្រួលទីតាំង X-coordinates សម្រាប់ក្រឡោនទាំង ៣ ឱ្យខិតមកកណ្ដាលបន្តិច
         start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
-        col_qty_x = width * 0.60
-        col_price_x = width * 0.73
-        col_total_x = width * 0.89
+        col_qty_x = width * 0.57  # កែពី 0.60 មក 0.57
+        col_price_x = width * 0.71 # កែពី 0.73 មក 0.71
+        col_total_x = width * 0.87 # កែពី 0.89 មក 0.87
 
         lines = data.get('items_list', [])
         for i, line in enumerate(lines[:12]):
@@ -162,22 +180,41 @@ def generate_invoice_image(chat_id):
         cust_x = width * 0.23
         draw.text((cust_x, height * 0.818), data.get('name', ''), fill="blue", font=font_cust)
         draw.text((cust_x, height * 0.852), data.get('phone', ''), fill="blue", font=font_cust)
-        draw.text((cust_x, height * 0.885), data.get('location', ''), fill="blue", font=font_cust)
+        draw.text((cust_x, height * 0.885), data.get('location', ''), fill="blue", font_cust)
 
         draw.text((width * 0.84, height * 0.822), data.get('total', ''), fill="red", font=font_total, anchor="mm")
         draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
 
-        output_filename = f"invoice_{chat_id}.png"
-        output_path = os.path.join(BASE_DIR, output_filename)
-        img.save(output_path)
+        invoice_filename = f"invoice_{chat_id}.png"
+        invoice_path = os.path.join(BASE_DIR, invoice_filename)
+        img.save(invoice_path)
+
+        # 2. បង្កើត Dynamic QR Code (ABA Pay Link)
+        total_amount = data.get('total_raw', 0)
+        formatted_amount = f"{total_amount:.2f}"
+        aba_pay_url = f"https://pay.ababank.com/pay?amount={formatted_amount}&currency=USD&to={ABA_ACCOUNT}&name={MERCHANT_NAME}"
         
-        with open(output_path, 'rb') as photo:
-            bot.send_photo(chat_id, photo, caption="🧾 នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!")
+        qr = qrcode.QRCode(version=1, box_size=10, border=4)
+        qr.add_data(aba_pay_url)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color="black", back_color="white")
+        
+        qr_filename = f"dynamic_qr_{chat_id}.png"
+        qr_path = os.path.join(BASE_DIR, qr_filename)
+        qr_img.save(qr_path)
+
+        # 3. ផ្ញើរូបភាពទាំងពីរទៅកាន់ Telegram
+        with open(invoice_path, 'rb') as inv_photo:
+            bot.send_photo(chat_id, inv_photo, caption="🧾 **វិក្កយបត្រផ្លូវការហាង THE SAL**", parse_mode="Markdown")
             
-        os.remove(output_path)
+        with open(qr_path, 'rb') as qr_photo:
+            bot.send_photo(chat_id, qr_photo, caption=f"🇰🇭 **ABA Pay (កំណត់ទឹកប្រាក់ស្រាប់៖ {formatted_amount} USD)**\nសូមស្កេន QR នេះដើម្បីទូទាត់ប្រាក់ជូនហាង THE SAL!", parse_mode="Markdown")
+            
+        os.remove(invoice_path)
+        os.remove(qr_path)
         
     except Exception as e:
-        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
+        bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងการបង្កើតរូបភាព៖ {str(e)}")
 
     user_data[chat_id] = {'items_list': []}
     ask_item(chat_id)
