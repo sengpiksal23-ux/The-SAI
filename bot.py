@@ -4,14 +4,9 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import os
 import re
-import qrcode
 
 TOKEN = '9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q'
 bot = telebot.TeleBot(TOKEN)
-
-# 🇰🇭 ព័ត៌មានគណនី ABA របស់ហាង THE SAL
-ABA_ACCOUNT = "005193074"
-MERCHANT_NAME = "YI LY CHORNG Seng piksal"
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -24,9 +19,9 @@ def send_welcome(message):
     logo_path = os.path.join(BASE_DIR, "logo.png")
     if os.path.exists(logo_path):
         with open(logo_path, 'rb') as logo:
-            bot.send_photo(chat_id, logo, caption=f"👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
+            bot.send_photo(chat_id, logo, caption="👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
     else:
-        bot.send_message(chat_id, f"👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
+        bot.send_message(chat_id, "👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
     
     ask_item(chat_id)
 
@@ -93,38 +88,86 @@ def callback_handler(call):
                         except ValueError:
                             pass
                             
-        formatted_total = f"{int(total_sum) if total_sum.is_integer() else total_sum}.00 USD"
         user_data[chat_id]['total'] = f"{int(total_sum) if total_sum.is_integer() else total_sum}$"
-        user_data[chat_id]['total_raw'] = total_sum
         
         bot.send_message(chat_id, f"💵 **ទឹកប្រាក់សរុបគណនាបានស្វ័យប្រវត្តិ៖** `{user_data[chat_id]['total']}`", parse_mode="Markdown")
         
         msg = bot.send_message(chat_id, "👤 សូមបញ្ចូល **ឈ្មោះអតិថិជន**៖", parse_mode="Markdown")
         bot.register_next_step_handler(msg, get_name)
 
+    elif call.data == "edit_name":
+        bot.answer_callback_query(call.id, "កែប្រែឈ្មោះអតិថិជន")
+        msg = bot.send_message(chat_id, "👤 សូមបញ្ចូល **ឈ្មោះអតិថិជន** ថ្មី៖", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, get_name)
+
+    elif call.data == "edit_phone":
+        bot.answer_callback_query(call.id, "កែប្រែលេខទូរស័ព្ទ")
+        msg = bot.send_message(chat_id, "📞 សូមបញ្ចូល **លេខទូរស័ព្ទអ្នកទទួល** ថ្មី៖", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, get_phone)
+
+    elif call.data == "edit_location":
+        bot.answer_callback_query(call.id, "កែប្រែទីតាំងដឹកជញ្ជូន")
+        msg = bot.send_message(chat_id, "📍 សូមបញ្ចូល **ទីតាំងដឹកជញ្ជូន** ថ្មី៖", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, get_location)
+
+    elif call.data == "confirm_generate":
+        bot.answer_callback_query(call.id, "កំពុងបង្កើតវិក្កយបត្រ...")
+        generate_invoice_image(chat_id)
+
 def get_name(message):
     chat_id = message.chat.id
+    if chat_id not in user_data:
+        user_data[chat_id] = {}
     user_data[chat_id]['name'] = message.text
+    
     msg = bot.send_message(chat_id, "📞 សូមបញ្ចូល **លេខទូរស័ព្ទអ្នកទទួល**៖", parse_mode="Markdown")
     bot.register_next_step_handler(msg, get_phone)
 
 def get_phone(message):
     chat_id = message.chat.id
+    if chat_id not in user_data:
+        user_data[chat_id] = {}
     user_data[chat_id]['phone'] = message.text
+    
     msg = bot.send_message(chat_id, "📍 សូមបញ្ចូល **ទីតាំងដឹកជញ្ជូន**៖", parse_mode="Markdown")
     bot.register_next_step_handler(msg, get_location)
 
 def get_location(message):
     chat_id = message.chat.id
+    if chat_id not in user_data:
+        user_data[chat_id] = {}
     user_data[chat_id]['location'] = message.text
-    generate_invoice_and_dynamic_qr(chat_id)
+    
+    show_preview_summary(chat_id)
 
-def generate_invoice_and_dynamic_qr(chat_id):
+def show_preview_summary(chat_id):
+    data = user_data[chat_id]
+    summary_text = (
+        "📋 **ពិនិត្យព័ត៌មានអតិថិជនមុនចេញវិក្កយបត្រ៖**\n\n"
+        f"👤 **ឈ្មោះ៖** {data.get('name', '')}\n"
+        f"📞 **ទូរស័ព្ទ៖** {data.get('phone', '')}\n"
+        f"📍 **ទីតាំង៖** {data.get('location', '')}\n"
+        f"💵 **ទឹកប្រាក់សរុប៖** {data.get('total', '')}\n\n"
+        "តើបងចង់កែប្រែព័ត៌មានណាមួយ ឬបង្កើតវិក្កយបត្រតែម្ដង?"
+    )
+    
+    markup = types.InlineKeyboardMarkup()
+    markup.row(
+        types.InlineKeyboardButton("✏️ កែឈ្មោះ", callback_data="edit_name"),
+        types.InlineKeyboardButton("✏️ កែទូរស័ព្ទ", callback_data="edit_phone")
+    )
+    markup.row(
+        types.InlineKeyboardButton("✏️ កែទីតាំង", callback_data="edit_location"),
+        types.InlineKeyboardButton("🚀 បង្កើតវិក្កយបត្រ", callback_data="confirm_generate")
+    )
+    
+    bot.send_message(chat_id, summary_text, parse_mode="Markdown", reply_markup=markup)
+
+def generate_invoice_image(chat_id):
     data = user_data[chat_id]
     current_date = "កាលបរិច្ឆេទ : " + datetime.now().strftime("%d / %m / %Y")
 
     try:
-        # 1. បង្កើតរូបភាពវិក្កយបត្រ (Invoice Image)
         img_path = os.path.join(BASE_DIR, "template.png")
         font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
         font_path = None
@@ -149,9 +192,10 @@ def generate_invoice_and_dynamic_qr(chat_id):
         start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
-        col_qty_x = width * 0.57
-        col_price_x = width * 0.71
-        col_total_x = width * 0.87
+        # 🛠️ កែសម្រួលរំកិលក្រឡោនចំនួន តម្លៃរាយ និងតម្លៃសរុប ឱ្យខិតចូលមកកណ្ដាលបន្តិចទៀត
+        col_qty_x = width * 0.53
+        col_price_x = width * 0.67
+        col_total_x = width * 0.82
 
         lines = data.get('items_list', [])
         for i, line in enumerate(lines[:12]):
@@ -174,7 +218,6 @@ def generate_invoice_and_dynamic_qr(chat_id):
             draw.text((col_price_x, y), price, fill="black", font=font_item, anchor="mm")
             draw.text((col_total_x, y), total_item, fill="black", font=font_item, anchor="mm")
 
-        # 🛠️ បំបែកអក្សរអតិថិជនចេញជា Variable ដាច់ដោយឡែកដើម្បីការពារ SyntaxError
         cust_x = width * 0.23
         c_name = data.get('name', '')
         c_phone = data.get('phone', '')
@@ -188,33 +231,15 @@ def generate_invoice_and_dynamic_qr(chat_id):
         draw.text((width * 0.84, height * 0.822), c_total, fill="red", font=font_total, anchor="mm")
         draw.text((width * 0.77, height * 0.876), current_date, fill="red", font=font_date, anchor="mm")
 
-        invoice_filename = f"invoice_{chat_id}.png"
-        invoice_path = os.path.join(BASE_DIR, invoice_filename)
-        img.save(invoice_path)
-
-        # 2. បង្កើត Dynamic QR Code (ABA Pay Link)
-        total_amount = data.get('total_raw', 0)
-        formatted_amount = f"{total_amount:.2f}"
-        aba_pay_url = f"https://pay.ababank.com/pay?amount={formatted_amount}&currency=USD&to={ABA_ACCOUNT}&name={MERCHANT_NAME}"
+        output_filename = f"invoice_{chat_id}.png"
+        output_path = os.path.join(BASE_DIR, output_filename)
+        img.save(output_path)
         
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(aba_pay_url)
-        qr.make(fit=True)
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        
-        qr_filename = f"dynamic_qr_{chat_id}.png"
-        qr_path = os.path.join(BASE_DIR, qr_filename)
-        qr_img.save(qr_path)
-
-        # 3. ផ្ញើរូបភាពទាំងពីរទៅកាន់ Telegram
-        with open(invoice_path, 'rb') as inv_photo:
-            bot.send_photo(chat_id, inv_photo, caption="🧾 **វិក្កយបត្រផ្លូវការហាង THE SAL**", parse_mode="Markdown")
+        # ផ្ញើរូបភាពវិក្កយបត្រតែមួយសន្លឹក (គ្មាន QR ទៀតទេ)
+        with open(output_path, 'rb') as photo:
+            bot.send_photo(chat_id, photo, caption="🧾 **នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!**")
             
-        with open(qr_path, 'rb') as qr_photo:
-            bot.send_photo(chat_id, qr_photo, caption=f"🇰🇭 **ABA Pay (កំណត់ទឹកប្រាក់ស្រាប់៖ {formatted_amount} USD)**\nសូមស្កេន QR នេះដើម្បីទូទាត់ប្រាក់ជូនហាង THE SAL!", parse_mode="Markdown")
-            
-        os.remove(invoice_path)
-        os.remove(qr_path)
+        os.remove(output_path)
         
     except Exception as e:
         bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
