@@ -192,10 +192,10 @@ def generate_invoice_image(chat_id):
         start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
-        # 🛠️ កែសម្រួលរំកិលក្រឡោនចំនួន តម្លៃរាយ និងតម្លៃសរុប ឱ្យខិតចូលមកកណ្ដាលបន្តិចទៀត
-        col_qty_x = width * 0.53
-        col_price_x = width * 0.67
-        col_total_x = width * 0.82
+        # 🛠️ កែសម្រួលរំកិលក្រឡោន "តម្លៃរាយ" និង "តម្លៃសរុប" ឱ្យចេញមកក្រៅ (ស្ដាំ) បន្តិចវិញ
+        col_qty_x = width * 0.57
+        col_price_x = width * 0.71
+        col_total_x = width * 0.87
 
         lines = data.get('items_list', [])
         for i, line in enumerate(lines[:12]):
@@ -235,7 +235,7 @@ def generate_invoice_image(chat_id):
         output_path = os.path.join(BASE_DIR, output_filename)
         img.save(output_path)
         
-        # ផ្ញើរូបភាពវិក្កយបត្រតែមួយសន្លឹក (គ្មាន QR ទៀតទេ)
+        # ផ្ញើរូបភាពវិក្កយបត្រតែមួយសន្លឹក (គ្មាន QR code ទៀតទេ)
         with open(output_path, 'rb') as photo:
             bot.send_photo(chat_id, photo, caption="🧾 **នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!**")
             
