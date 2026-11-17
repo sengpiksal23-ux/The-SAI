@@ -113,7 +113,6 @@ def callback_handler(call):
     elif call.data == "confirm_generate":
         bot.answer_callback_query(call.id, "សូមជ្រើសរើសប្រភេទបុងវិក្កយបត្រ៖")
         
-        # បង្កើតប៊ូតុងសម្រាប់ជ្រើសរើស template
         markup = types.InlineKeyboardMarkup()
         markup.row(
             types.InlineKeyboardButton("🧾 1. The Sal (template.png)", callback_data="template_the_sal"),
@@ -121,7 +120,6 @@ def callback_handler(call):
         )
         bot.send_message(chat_id, "តើបងចង់ចេញវិក្កយបត្រប្រភេទណា?", reply_markup=markup)
 
-    # ទទួលការជ្រើសរើស Template នីមួយៗ
     elif call.data == "template_the_sal":
         bot.answer_callback_query(call.id, "កំពុងបង្កើតវិក្កយបត្រ The Sal...")
         generate_invoice_image(chat_id, "template.png", "The Sal")
@@ -186,7 +184,6 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
     try:
         img_path = os.path.join(BASE_DIR, template_filename)
         
-        # ត្រួតពិនិត្យមើលសិនថាតើ template នោះមានឬអត់
         if not os.path.exists(img_path):
             bot.send_message(chat_id, f"⚠️ រកមិនឃើញဖាំអក្សររូបភាព {template_filename} ក្នុងโฟលឌ័រទេ សូមដាក់បញ្ចូលជាមុនសិន។")
             return
@@ -256,7 +253,6 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
         output_path = os.path.join(BASE_DIR, output_filename)
         img.save(output_path)
         
-        # ផ្ញើរូបភាពវិក្កយបត្រតាមប្រភេទបុងដែលបានរើស
         with open(output_path, 'rb') as photo:
             bot.send_photo(chat_id, photo, caption=f"🧾 **នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង {brand_name}!**")
             
