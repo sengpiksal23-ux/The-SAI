@@ -19,9 +19,9 @@ def send_welcome(message):
     logo_path = os.path.join(BASE_DIR, "logo.png")
     if os.path.exists(logo_path):
         with open(logo_path, 'rb') as logo:
-            bot.send_photo(chat_id, logo, caption="👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
+            bot.send_photo(chat_id, logo, caption="👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL & P.S.C**")
     else:
-        bot.send_message(chat_id, "👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL**")
+        bot.send_message(chat_id, "👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL & P.S.C**")
     
     ask_item(chat_id)
 
@@ -111,8 +111,24 @@ def callback_handler(call):
         bot.register_next_step_handler(msg, get_location)
 
     elif call.data == "confirm_generate":
-        bot.answer_callback_query(call.id, "កំពុងបង្កើតវិក្កយបត្រ...")
-        generate_invoice_image(chat_id)
+        bot.answer_callback_query(call.id, "សូមជ្រើសរើសប្រភេទបុងវិក្កយបត្រ៖")
+        
+        # បង្កើតប៊ូតុងសម្រាប់ជ្រើសរើស template
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton("🧾 1. The Sal (template.png)", callback_data="template_the_sal"),
+            types.InlineKeyboardButton("🧾 2. P.S.C (template2.png)", callback_data="template_psc")
+        )
+        bot.send_message(chat_id, "តើបងចង់ចេញវិក្កយបត្រប្រភេទណា?", reply_markup=markup)
+
+    # ទទួលការជ្រើសរើស Template នីមួយៗ
+    elif call.data == "template_the_sal":
+        bot.answer_callback_query(call.id, "កំពុងបង្កើតវិក្កយបត្រ The Sal...")
+        generate_invoice_image(chat_id, "template.png", "The Sal")
+
+    elif call.data == "template_psc":
+        bot.answer_callback_query(call.id, "កំពុងបង្កើតវិក្កយបត្រ P.S.C...")
+        generate_invoice_image(chat_id, "template2.png", "P.S.C")
 
 def get_name(message):
     chat_id = message.chat.id
@@ -148,7 +164,7 @@ def show_preview_summary(chat_id):
         f"📞 **ទូរស័ព្ទ៖** {data.get('phone', '')}\n"
         f"📍 **ទីតាំង៖** {data.get('location', '')}\n"
         f"💵 **ទឹកប្រាក់សរុប៖** {data.get('total', '')}\n\n"
-        "តើបងចង់កែប្រែព័ត៌មានណាមួយ ឬបង្កើតវិក្កយបត្រតែម្ដង?"
+        "តើបងចង់កែប្រែព័ត៌មានណាមួយ ឬទៅជ្រើសរើសប្រភេទបុង?"
     )
     
     markup = types.InlineKeyboardMarkup()
@@ -158,17 +174,23 @@ def show_preview_summary(chat_id):
     )
     markup.row(
         types.InlineKeyboardButton("✏️ កែទីតាំង", callback_data="edit_location"),
-        types.InlineKeyboardButton("🚀 បង្កើតវិក្កយបត្រ", callback_data="confirm_generate")
+        types.InlineKeyboardButton("🚀 ជ្រើសរើសប្រភេទបុង", callback_data="confirm_generate")
     )
     
     bot.send_message(chat_id, summary_text, parse_mode="Markdown", reply_markup=markup)
 
-def generate_invoice_image(chat_id):
+def generate_invoice_image(chat_id, template_filename, brand_name):
     data = user_data[chat_id]
     current_date = "កាលបរិច្ឆេទ : " + datetime.now().strftime("%d / %m / %Y")
 
     try:
-        img_path = os.path.join(BASE_DIR, "template.png")
+        img_path = os.path.join(BASE_DIR, template_filename)
+        
+        # ត្រួតពិនិត្យមើលសិនថាតើ template នោះមានឬអត់
+        if not os.path.exists(img_path):
+            bot.send_message(chat_id, f"⚠️ រកមិនឃើញဖាំអក្សររូបភាព {template_filename} ក្នុងโฟលឌ័រទេ សូមដាក់បញ្ចូលជាមុនសិន។")
+            return
+
         font_candidates = ["KhmerS4.ttf", "Khmer S4.ttf", "Battambang-Regular.ttf"]
         font_path = None
         for fc in font_candidates:
@@ -192,7 +214,6 @@ def generate_invoice_image(chat_id):
         start_y = height * 0.330
         row_height = height * 0.040
         col_name_x = width * 0.15
-        # 🛠️ កែសម្រួលរំកិលក្រឡោន "តម្លៃរាយ" និង "តម្លៃសរុប" ឱ្យចេញមកក្រៅ (ស្ដាំ) បន្តិចវិញ
         col_qty_x = width * 0.57
         col_price_x = width * 0.71
         col_total_x = width * 0.87
@@ -235,9 +256,9 @@ def generate_invoice_image(chat_id):
         output_path = os.path.join(BASE_DIR, output_filename)
         img.save(output_path)
         
-        # ផ្ញើរូបភាពវិក្កយបត្រតែមួយសន្លឹក (គ្មាន QR code ទៀតទេ)
+        # ផ្ញើរូបភាពវិក្កយបត្រតាមប្រភេទបុងដែលបានរើស
         with open(output_path, 'rb') as photo:
-            bot.send_photo(chat_id, photo, caption="🧾 **នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង THE SAL!**")
+            bot.send_photo(chat_id, photo, caption=f"🧾 **នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង {brand_name}!**")
             
         os.remove(output_path)
         
