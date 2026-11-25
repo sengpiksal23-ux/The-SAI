@@ -1,10 +1,26 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import re
 from PIL import Image, ImageDraw, ImageFont
 import telebot
 from telebot import types
+
+try:
+  from zoneinfo import ZoneInfo
+
+  KH_TZ = ZoneInfo("Asia/Phnom_Penh")
+except Exception:
+  KH_TZ = timezone(timedelta(hours=7))
+
+
+def now_kh():
+  return datetime.now(KH_TZ)
+
+
+def get_khmer_date_str():
+  return "កាលបរិច្ឆេទ : " + now_kh().strftime("%d / %m / %Y")
+
 
 TOKEN = "9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q"
 bot = telebot.TeleBot(TOKEN)
@@ -147,7 +163,7 @@ def record_payment_message(chat_id, msg_id, msg_date_ts, text):
     return 0.0, 0.0, False
 
   msg_dt = (
-      datetime.fromtimestamp(msg_date_ts) if msg_date_ts else datetime.now()
+      datetime.fromtimestamp(msg_date_ts, tz=KH_TZ) if msg_date_ts else now_kh()
   )
   month_key = msg_dt.strftime("%Y-%m")
 
@@ -245,7 +261,7 @@ def get_year_summary_text(chat_id_str, year_str):
 @bot.message_handler(commands=["month", "income"])
 def cmd_monthly_income(message):
   chat_id_str = str(message.chat.id)
-  now = datetime.now()
+  now = now_kh()
   parts = (message.text or "").strip().split()
 
   if len(parts) > 1 and re.fullmatch(r"\d{4}-\d{2}", parts[1]):
@@ -435,7 +451,7 @@ def process_item(message):
 def callback_handler(call):
   chat_id = call.message.chat.id
   chat_id_str = str(chat_id)
-  now = datetime.now()
+  now = now_kh()
 
   if call.data == "inc_month_now":
     bot.answer_callback_query(call.id, "កំពុងបង្ហាញប្រចាំខែ...")
@@ -690,7 +706,7 @@ def show_preview_summary(chat_id):
 
 def generate_invoice_image(chat_id, template_filename, brand_name):
   data = user_data[chat_id]
-  current_date = "កាលបរិច្ឆេទ : " + datetime.now().strftime("%d / %m / %Y")
+  current_date = get_khmer_date_str()
   output_path = None
 
   try:
@@ -805,8 +821,33 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
         font=font_total,
         anchor="mm",
     )
+
+    date_center_x = int(width * 0.77)
+    date_center_y = int(height * 0.876)
+
+    bbox = draw.textbbox((0, 0), current_date, font=font_date)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    pad_x = int(width * 0.015)
+    pad_y = int(height * 0.006)
+    box_w = text_w + (pad_x * 2)
+    box_h = text_h + (pad_y * 2)
+
+    box_left = date_center_x - (box_w // 2)
+    box_top = date_center_y - (box_h // 2)
+    box_right = box_left + box_w
+    box_bottom = box_top + box_h
+
+    draw.rounded_rectangle(
+        [box_left, box_top, box_right, box_bottom],
+        radius=int(min(box_w, box_h) * 0.25),
+        fill="white",
+        outline="red",
+        width=2,
+    )
     draw.text(
-        (width * 0.77, height * 0.876),
+        (date_center_x, date_center_y),
         current_date,
         fill="red",
         font=font_date,
