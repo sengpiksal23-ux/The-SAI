@@ -823,7 +823,7 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
     )
 
     date_center_x = int(width * 0.77)
-    date_center_y = int(height * 0.876)
+    date_center_y = int(height * 0.892)
 
     bbox = draw.textbbox((0, 0), current_date, font=font_date)
     text_w = bbox[2] - bbox[0]
