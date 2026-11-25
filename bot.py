@@ -365,6 +365,31 @@ def parse_item_line(line):
   }
 
 
+def wrap_text_by_pixel_width(draw, text, font, max_width):
+  """បំបែកអត្ថបទឱ្យចុះបន្ទាត់ស្វ័យប្រវត្តិ ពេលប្រវែងលើសពី max_width។"""
+  if not text:
+    return [""]
+
+  tokens = re.findall(r"\S+\s*|\s+", str(text))
+  lines = []
+  current = ""
+
+  for tok in tokens:
+    candidate = current + tok
+    bbox = draw.textbbox((0, 0), candidate.rstrip(), font=font)
+    w = bbox[2] - bbox[0]
+    if w <= max_width or not current.strip():
+      current = candidate
+    else:
+      lines.append(current.rstrip())
+      current = tok.lstrip()
+
+  if current.strip():
+    lines.append(current.rstrip())
+
+  return lines if lines else [str(text)]
+
+
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
   chat_id = message.chat.id
@@ -810,9 +835,20 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
 
     draw.text((cust_x, height * 0.818), c_name, fill="blue", font=font_cust)
     draw.text((cust_x, height * 0.852), c_phone, fill="blue", font=font_cust)
-    draw.text(
-        (cust_x, height * 0.885), c_location, fill="blue", font=font_cust
+
+    loc_y_start = height * 0.885
+    loc_line_height = height * 0.022
+    max_loc_width = width * 0.46
+    loc_lines = wrap_text_by_pixel_width(
+        draw, c_location, font_cust, max_loc_width
     )
+    for idx, loc_line in enumerate(loc_lines[:3]):
+      draw.text(
+          (cust_x, loc_y_start + (idx * loc_line_height)),
+          loc_line,
+          fill="blue",
+          font=font_cust,
+      )
 
     draw.text(
         (width * 0.84, height * 0.822),
