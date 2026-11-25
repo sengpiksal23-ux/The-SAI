@@ -86,6 +86,7 @@ def is_incoming_payment_text(text):
       "payment to",
       "ផ្ទេរចេញ",
       "ដកប្រាក់",
+      "បានផ្ទេរចេញ",
       "ចំណាយ",
   ]
   if any(k in low for k in out_keywords):
@@ -93,15 +94,14 @@ def is_incoming_payment_text(text):
 
   in_keywords = [
       "ត្រូវបានបង់ដោយ",
+      "aba khqr",
+      "khqr",
       "received",
       "credited",
       "credit",
       "deposit",
       "incoming",
       "paid by",
-      "from ",
-      "khqr",
-      "aba",
       "បានទទួល",
       "លុយចូល",
       "ទទួលបាន",
@@ -258,36 +258,6 @@ def get_year_summary_text(chat_id_str, year_str):
   )
 
 
-@bot.message_handler(commands=["month", "income"])
-def cmd_monthly_income(message):
-  chat_id_str = str(message.chat.id)
-  now = now_kh()
-  parts = (message.text or "").strip().split()
-
-  if len(parts) > 1 and re.fullmatch(r"\d{4}-\d{2}", parts[1]):
-    text_out = get_month_summary_text(chat_id_str, parts[1])
-  else:
-    text_out = get_month_summary_text(chat_id_str, now.strftime("%Y-%m"))
-
-  bot.reply_to(
-      message,
-      text_out,
-      parse_mode="Markdown",
-      reply_markup=build_income_menu_markup(),
-  )
-
-
-@bot.message_handler(
-    func=lambda m: m.chat.type in ("group", "supergroup"),
-    content_types=["text", "photo", "document"],
-)
-def track_group_incoming_money(message):
-  text = (message.text or message.caption or "").strip()
-  record_payment_message(
-      message.chat.id, message.message_id, message.date, text
-  )
-
-
 # ==========================================
 # 🧾 មុខងារចេញវិក្កយបត្រ (THE SAL & P.S.C)
 # ==========================================
@@ -414,6 +384,41 @@ def send_welcome(message):
     )
 
   ask_item(chat_id)
+
+
+@bot.message_handler(commands=["month", "income"], func=lambda m: True)
+def cmd_monthly_income(message):
+  chat_id_str = str(message.chat.id)
+  now = now_kh()
+  raw_text = (message.text or "").strip()
+  parts = raw_text.split()
+
+  arg = parts[1] if len(parts) > 1 else ""
+  if arg and re.fullmatch(r"\d{4}-\d{2}", arg):
+    text_out = get_month_summary_text(chat_id_str, arg)
+  else:
+    text_out = get_month_summary_text(chat_id_str, now.strftime("%Y-%m"))
+
+  bot.send_message(
+      message.chat.id,
+      text_out,
+      parse_mode="Markdown",
+      reply_markup=build_income_menu_markup(),
+  )
+
+
+@bot.message_handler(
+    func=lambda m: (
+        m.chat.type in ("group", "supergroup")
+        and not (m.text or m.caption or "").strip().startswith("/")
+    ),
+    content_types=["text", "photo", "document"],
+)
+def track_group_incoming_money(message):
+  text = (message.text or message.caption or "").strip()
+  record_payment_message(
+      message.chat.id, message.message_id, message.date, text
+  )
 
 
 def ask_item(chat_id):
