@@ -281,9 +281,17 @@ def get_khqr_payload_from_api(tran_id, amount, brand_name):
   )
 
 
+def find_aba_qr_bg():
+  for name in ("aba_qr_bg.jpg", "aba_qr_bg.jpeg", "aba_qr_bg.png"):
+    p = os.path.join(BASE_DIR, name)
+    if os.path.exists(p):
+      return p
+  return None
+
+
 def generate_qr_image(qr_text, output_path):
   """
-    បង្កើតរូប QR ដោយដាក់នៅចំកណ្ដាលរូប ABA PAY (aba_qr_bg.png) ប្រសិនបើមាន។
+    បង្កើតរូប QR ជា JPEG ដោយដាក់នៅចំកណ្ដាលរូប ABA PAY ប្រសិនបើមាន។
     """
   qr = qrcode.QRCode(
       version=None,
@@ -295,23 +303,21 @@ def generate_qr_image(qr_text, output_path):
   qr.make(fit=True)
   qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
 
-  bg_path = os.path.join(BASE_DIR, "aba_qr_bg.png")
-  if os.path.exists(bg_path):
+  bg_path = find_aba_qr_bg()
+  if bg_path:
     bg_img = Image.open(bg_path).convert("RGB")
     bg_w, bg_h = bg_img.size
 
-    # កំណត់ទំហំ QR ឱ្យសមនឹងប្រអប់កណ្ដាលរូប ABA PAY
     qr_size = int(min(bg_w, bg_h) * 0.42)
     qr_resized = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
 
-    # ដាក់ចំកណ្ដាលតាមទទឹង (X) និងកំណត់ទីតាំងតាមបណ្ដោយ (Y)
     paste_x = (bg_w - qr_size) // 2
     paste_y = int(bg_h * 0.50) - (qr_size // 2)
 
     bg_img.paste(qr_resized, (paste_x, paste_y))
-    bg_img.save(output_path)
+    bg_img.save(output_path, format="JPEG", quality=95)
   else:
-    qr_img.save(output_path)
+    qr_img.save(output_path, format="JPEG", quality=95)
 
 
 def generate_invoice_image(chat_id, template_filename, brand_name):
@@ -431,14 +437,14 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
         anchor="mm",
     )
 
-    output_path = os.path.join(BASE_DIR, f"invoice_{chat_id}.png")
-    img.save(output_path)
+    output_path = os.path.join(BASE_DIR, f"invoice_{chat_id}.jpg")
+    img.save(output_path, format="JPEG", quality=95)
 
     prefix = "SAL" if brand_name == "The Sal" else "PSC"
     tran_id = f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{chat_id}"
     qr_payload = get_khqr_payload_from_api(tran_id, c_total, brand_name)
 
-    qr_path = os.path.join(BASE_DIR, f"qr_{chat_id}.png")
+    qr_path = os.path.join(BASE_DIR, f"qr_{chat_id}.jpg")
     generate_qr_image(qr_payload, qr_path)
 
     with open(output_path, "rb") as inv_photo, open(qr_path, "rb") as qr_photo:
