@@ -1,58 +1,181 @@
-import base64
 from datetime import datetime
-import hashlib
-import hmac
+import json
 import os
 import re
 from PIL import Image, ImageDraw, ImageFont
-import qrcode
-import requests
 import telebot
 from telebot import types
 
 TOKEN = "9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q"
 bot = telebot.TeleBot(TOKEN)
 
-# ==========================================
-# ⚙️ ABA PayWay Sandbox Credentials
-# ==========================================
-ABA_MERCHANT_ID = os.environ.get("ABA_MERCHANT_ID", "ec480930")
-ABA_PUBLIC_KEY = os.environ.get(
-    "ABA_PUBLIC_KEY", "50FB3A0D89567C8E6D7D765315F639921D7B2465"
-)
-ABA_RSA_PRIVATE_KEY = os.environ.get(
-    "ABA_RSA_PRIVATE_KEY",
-    """-----BEGIN RSA PRIVATE KEY-----
-MIICXAIBAAKBgQDlzpS7MLtLoz62CBi2Yo77W2CwT0XLLeeuxS/2BNnYOTC5HEZt
-iPgePI3OTd/jpqZS9tZDAEGnxen7U4gtRA5AKM+ONbPaV2X4jcX/PcOEcb2DsFfI
-YDRF3VGbcnjJmkw0d0eusYj/AeyNucVuSqzJTE3j7ZRigQxdI9ZEgFaL6wIDAQAB
-AoGAUjB7EyPPqLKeyB3HMNu5BX7d6tC/RnaJiQEvMQ71FpcFrP7G1YAKNU407Vb+
-vv2oOL3dTaM22Bk5oNB0QLQ5X91yQu+N7TTNCOjBxbV2fhRxKbpg4UE54HmpInjY
-G4Jn2jlSlmxEHoNWxnLwYW+MRX1K1psZjo8VXDoeuq7q3XECQQD3AH3exdYKdoNd
-8n3evnSsisaMGy70Am30z9d/snjxJi54CsjjTa9KX9sANKQEhMEcs/nfQm5bzYQN
-7hbQJ56JAkEA7i27NHCPC5YsgN7kUlZQq1qq7cBVSk1p6D/AaOwUUnqQQZzcYawd
-quNM/WdetFGLxITICOEUMcjowNup/reZ0wJBANITBfrBcjDF6SavBiS7AUp6YTFq
-MT3xDwnG97aw2THoUl9gdMj2Gl78NavwGYuKSSAbZipfOrMzkNu0Ioz5FVkCQFQX
-22f5cdfybsYVbGHRzeuiOIV3CeYRDRqOH74r1EUGtxYjbwAhR9xFIrK5o4tg20tI
-YmQYLAwj1mH5bLzdUDcCQDcQx+VTQvDCafhMaZIx0rgT0YZFdRozPlEN1Bwz3eED
-rHSyL1gQGnENbA0BU0ZuICOFE+cdTuNOJpAF+CgMs/s=
------END RSA PRIVATE KEY-----""",
-)
-
-ABA_PURCHASE_URL = os.environ.get(
-    "ABA_PURCHASE_URL",
-    "https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/purchase",
-)
-ABA_CHECK_URL = os.environ.get(
-    "ABA_CHECK_URL",
-    "https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/check-transaction",
-)
-
 user_data = {}
-transactions_store = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+INCOME_FILE = os.path.join(BASE_DIR, "monthly_income.json")
 
 
+# ==========================================
+# 💰 មុខងារបូកលុយចូលប្រចាំខែក្នុង Group
+# ==========================================
+def load_income_data():
+  if os.path.exists(INCOME_FILE):
+    try:
+      with open(INCOME_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+        if isinstance(data, dict):
+          return data
+    except Exception:
+      pass
+  return {}
+
+
+def save_income_data(data):
+  with open(INCOME_FILE, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+income_data = load_income_data()
+
+
+def is_incoming_payment_text(text):
+  """ពិនិត្យថាតើសារជាការលុយចូល (មិនមែនលុយចេញ/ដក)។"""
+  if not text:
+    return False
+  low = text.lower()
+
+  # បដិសេធសារដែលជាលុយចេញ ឬដកប្រាក់
+  out_keywords = [
+      "sent ",
+      "transferred to",
+      "transfer out",
+      "withdraw",
+      "withdrawn",
+      "debit",
+      "paid to",
+      "payment to",
+      "ផ្ទេរចេញ",
+      "ដកប្រាក់",
+      "ចំណាយ",
+  ]
+  if any(k in low for k in out_keywords):
+    return False
+
+  # ទទួលយកសារដែលមានសញ្ញាលុយចូល
+  in_keywords = [
+      "received",
+      "credited",
+      "credit",
+      "deposit",
+      "incoming",
+      "paid by",
+      "from ",
+      "khqr",
+      "aba",
+      "បានទទួល",
+      "លុយចូល",
+      "ទទួលបាន",
+      "ចូលគណនី",
+  ]
+  return any(k in low for k in in_keywords)
+
+
+def extract_amounts_from_text(text):
+  """ទាញយកទឹកប្រាក់ USD ($) និង KHR (៛) ពីសារ។"""
+  usd_total = 0.0
+  khr_total = 0.0
+
+  # រក USD ដូចជា $15.50 ឬ 15.50$ ឬ 15.50 USD
+  for m in re.finditer(
+      r"\$\s*([\d,]+(?:\.[\d]+)?)|([\d,]+(?:\.[\d]+)?)\s*(?:\$|usd)\b",
+      text,
+      flags=re.IGNORECASE,
+  ):
+    val_str = (m.group(1) or m.group(2) or "").replace(",", "")
+    try:
+      usd_total += float(val_str)
+    except ValueError:
+      pass
+
+  # រក KHR ដូចជា 50,000៛ ឬ 50000 ៛ ឬ 50000 KHR
+  for m in re.finditer(
+      r"([\d,]+(?:\.[\d]+)?)\s*(?:៛|khr)\b", text, flags=re.IGNORECASE
+  ):
+    val_str = (m.group(1) or "").replace(",", "")
+    try:
+      khr_total += float(val_str)
+    except ValueError:
+      pass
+
+  return usd_total, khr_total
+
+
+def format_khr(amount):
+  val = float(amount)
+  if val.is_integer():
+    return f"{int(val):,}៛"
+  return f"{val:,.2f}៛"
+
+
+@bot.message_handler(commands=["month", "income"])
+def cmd_monthly_income(message):
+  chat_id = str(message.chat.id)
+  parts = (message.text or "").strip().split()
+  month_key = parts[1] if len(parts) > 1 else datetime.now().strftime("%Y-%m")
+
+  chat_months = income_data.get(chat_id, {})
+  entry = chat_months.get(month_key, {"usd": 0.0, "khr": 0.0, "count": 0})
+
+  usd_val = float(entry.get("usd", 0.0))
+  khr_val = float(entry.get("khr", 0.0))
+  count_val = int(entry.get("count", 0))
+
+  reply = (
+      f"📊 **សរុបលុយចូលប្រចាំខែ (`{month_key}`)**\n\n"
+      f"💵 **USD៖** `{format_usd(usd_val)}`\n"
+      f"🇰🇭 **KHR៖** `{format_khr(khr_val)}`\n"
+      f"🔢 **ចំនួនប្រតិបត្តិការចូល៖** `{count_val}` ដង\n\n"
+      "_មើលខែផ្សេង៖ `/month 2026-12`_"
+  )
+  bot.reply_to(message, reply, parse_mode="Markdown")
+
+
+@bot.message_handler(
+    func=lambda m: m.chat.type in ("group", "supergroup"),
+    content_types=["text", "photo", "document"],
+)
+def track_group_incoming_money(message):
+  # មិនបូកសារពាក្យបញ្ជា /month ឬ /income
+  text = (message.text or message.caption or "").strip()
+  if not text or text.startswith("/"):
+    return
+
+  if not is_incoming_payment_text(text):
+    return
+
+  usd_found, khr_found = extract_amounts_from_text(text)
+  if usd_found <= 0 and khr_found <= 0:
+    return
+
+  chat_id = str(message.chat.id)
+  msg_dt = (
+      datetime.fromtimestamp(message.date) if message.date else datetime.now()
+  )
+  month_key = msg_dt.strftime("%Y-%m")
+
+  income_data.setdefault(chat_id, {})
+  entry = income_data[chat_id].setdefault(
+      month_key, {"usd": 0.0, "khr": 0.0, "count": 0}
+  )
+
+  entry["usd"] = round(float(entry.get("usd", 0.0)) + usd_found, 2)
+  entry["khr"] = round(float(entry.get("khr", 0.0)) + khr_found, 2)
+  entry["count"] = int(entry.get("count", 0)) + 1
+  save_income_data(income_data)
+
+
+# ==========================================
+# 🧾 មុខងារចេញវិក្កយបត្រ (THE SAL & P.S.C)
+# ==========================================
 def parse_number(text):
   if not text:
     return None
@@ -70,8 +193,19 @@ def format_usd(amount):
   return f"{int(val) if val.is_integer() else round(val, 2)}$"
 
 
+def split_item_line(line):
+  text = line.strip()
+  if "|" in text:
+    return [p.strip() for p in text.split("|")]
+  if "," in text:
+    return [p.strip() for p in text.split(",")]
+  if "/" in text:
+    return [p.strip() for p in text.split("/")]
+  return [text]
+
+
 def parse_item_line(line):
-  parts = [p.strip() for p in line.split("|")]
+  parts = split_item_line(line)
   name = parts[0] if len(parts) > 0 else ""
   qty_raw = parts[1] if len(parts) > 1 else "1"
   price_raw = parts[2] if len(parts) > 2 else "0"
@@ -87,7 +221,11 @@ def parse_item_line(line):
   price_str = (
       format_usd(price_num)
       if price_num is not None
-      else (f"{price_raw}$" if price_raw and not price_raw.endswith("$") else price_raw)
+      else (
+          f"{price_raw}$"
+          if price_raw and not price_raw.endswith("$")
+          else price_raw
+      )
   )
 
   if len(parts) > 3 and parts[3]:
@@ -147,12 +285,12 @@ def ask_item(chat_id):
   bot.clear_step_handler_by_chat_id(chat_id)
   msg = bot.send_message(
       chat_id,
-      "🛍️ សូមបញ្ចូល **មុខទំនិញ ចំនួន និងតម្លៃរាយ** (មិនបាច់វាយតម្លៃសរុបទេ"
-      " ប្រព័ន្ធគណនាឱ្យដោយស្វ័យប្រវត្តិ):\n"
-      "`ឈ្មោះទំនិញ | ចំនួន | តម្លៃរាយ`\n\n"
+      "🛍️ សូមបញ្ចូល **មុខទំនិញ ចំនួន និងតម្លៃរាយ**"
+      " (ប្រព័ន្ធគណនាតម្លៃសរុបឱ្យស្វ័យប្រវត្តិ):\n"
+      "`ឈ្មោះទំនិញ, ចំនួន, តម្លៃរាយ`\n\n"
       "ឧទាហរណ៍:\n"
-      "ប៊ូសចង្កូត | 1 | 15$\n"
-      "សំបកកង់ | 4 | 50$",
+      "ប៊ូសចង្កូត, 1, 15$\n"
+      "សំបកកង់, 4, 50$",
       parse_mode="Markdown",
   )
   bot.register_next_step_handler(msg, process_item)
@@ -167,7 +305,7 @@ def process_item(message):
 
   for line in text.split("\n"):
     line = line.strip()
-    if "|" in line:
+    if any(sep in line for sep in ("|", ",", "/")):
       user_data[chat_id]["items_list"].append(line)
 
   markup = types.InlineKeyboardMarkup()
@@ -205,7 +343,7 @@ def callback_handler(call):
     )
     msg = bot.send_message(
         chat_id,
-        "សូមវាយបញ្ចូលមុខទំនិញបន្ថែម៖\n`ឈ្មោះទំនិញ | ចំនួន | តម្លៃរាយ`",
+        "សូមវាយបញ្ចូលមុខទំនិញបន្ថែម៖\n`ឈ្មោះទំនិញ, ចំនួន, តម្លៃរាយ`",
         parse_mode="Markdown",
     )
     bot.register_next_step_handler(msg, process_item)
@@ -283,12 +421,6 @@ def callback_handler(call):
     bot.answer_callback_query(call.id, "កំពុងបង្កើតវិក្កយបត្រ P.S.C...")
     generate_invoice_image(chat_id, "template2.png", "P.S.C")
 
-  elif call.data and call.data.startswith("check_pay:"):
-    tran_id = call.data.split(":", 1)[1]
-    bot.answer_callback_query(call.id, "កំពុងឆែកស្ថានភាពបង់ប្រាក់...")
-    status_msg = check_aba_payment_status(tran_id)
-    bot.send_message(chat_id, status_msg, parse_mode="Markdown")
-
 
 def get_name(message):
   chat_id = message.chat.id
@@ -353,154 +485,10 @@ def show_preview_summary(chat_id):
   )
 
 
-# ==========================================
-# 🔐 ABA PayWay Sandbox Purchase & Check API
-# ==========================================
-def generate_aba_hash(raw_string, key=ABA_PUBLIC_KEY):
-  digest = hmac.new(
-      key.encode("utf-8"), raw_string.encode("utf-8"), hashlib.sha512
-  ).digest()
-  return base64.b64encode(digest).decode("utf-8")
-
-
-def request_aba_purchase_qr(tran_id, amount_num, customer_info, brand_name):
-  """
-    ហៅ ABA PayWay Sandbox /v1/payments/purchase។
-    ប្រសិនបើ API ត្រឡប់ qrString / qr_string / abapay_deeplink / checkout_url នឹងប្រើសម្រាប់បង្កើត QR។
-    """
-  amount_str = f"{float(amount_num):.2f}"
-  req_time = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-  payment_option = "abapay_khqr"
-  currency = "USD"
-
-  # លំដាប់ hash string ធម្មតារបស់ ABA PayWay (អាចកែតាមឯកសារ PayWay version ពិតប្រាកដ)
-  raw_for_hash = (
-      f"{req_time}{ABA_MERCHANT_ID}{tran_id}{amount_str}{payment_option}{currency}"
-  )
-  req_hash = generate_aba_hash(raw_for_hash, ABA_PUBLIC_KEY)
-
-  form_data = {
-      "req_time": req_time,
-      "merchant_id": ABA_MERCHANT_ID,
-      "tran_id": tran_id,
-      "amount": amount_str,
-      "currency": currency,
-      "payment_option": payment_option,
-      "firstname": customer_info.get("name", "") or "Customer",
-      "phone": customer_info.get("phone", ""),
-      "hash": req_hash,
-  }
-
-  try:
-    resp = requests.post(
-        ABA_PURCHASE_URL,
-        data=form_data,
-        headers={"Accept": "application/json"},
-        timeout=20,
-    )
-    try:
-      res_json = resp.json()
-    except ValueError:
-      res_json = {"raw_text": resp.text}
-
-    qr_val = (
-        res_json.get("qrString")
-        or res_json.get("qr_string")
-        or res_json.get("abapay_deeplink")
-        or res_json.get("checkout_url")
-        or (res_json.get("data", {}) if isinstance(res_json.get("data"), dict) else {}).get("qrString")
-        or (res_json.get("data", {}) if isinstance(res_json.get("data"), dict) else {}).get("qr_string")
-    )
-    if qr_val:
-      return str(qr_val), None
-
-    # ប្រសិនបើ Sandbox ទាមទារ field ឬ hash format ផ្សេង នឹងបង្ហាញព័ត៌មានឆ្លើយតបដើម្បីងាយស្រួលកែ
-    return (
-        f"ABA_SANDBOX|MID:{ABA_MERCHANT_ID}|{brand_name}|{tran_id}|{amount_str} USD",
-        f"⚠️ ABA API response: `{str(res_json)[:300]}`",
-    )
-  except Exception as e:
-    return (
-        f"ABA_SANDBOX|MID:{ABA_MERCHANT_ID}|{brand_name}|{tran_id}|{amount_str} USD",
-        f"⚠️ មិនអាចតភ្ជាប់ ABA Purchase API បាន៖ `{str(e)}`",
-    )
-
-
-def check_aba_payment_status(tran_id):
-  info = transactions_store.get(tran_id, {})
-  req_time = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-  raw_for_hash = f"{req_time}{ABA_MERCHANT_ID}{tran_id}"
-  payload = {
-      "req_time": req_time,
-      "merchant_id": ABA_MERCHANT_ID,
-      "tran_id": tran_id,
-      "hash": generate_aba_hash(raw_for_hash, ABA_PUBLIC_KEY),
-  }
-
-  try:
-    resp = requests.post(ABA_CHECK_URL, json=payload, timeout=20)
-    try:
-      res_data = resp.json()
-    except ValueError:
-      res_data = {"raw_text": resp.text}
-
-    payment_status = (
-        res_data.get("payment_status")
-        or (res_data.get("data", {}) if isinstance(res_data.get("data"), dict) else {}).get("payment_status")
-        or (res_data.get("status", {}) if isinstance(res_data.get("status"), dict) else {}).get("message")
-        or str(res_data)[:250]
-    )
-    return (
-        f"🔎 **ស្ថានភាពបង់ប្រាក់ (Sandbox):**\n"
-        f"• Ref: `{tran_id}`\n"
-        f"• ទឹកប្រាក់៖ `{info.get('amount_str', 'N/A')}`\n"
-        f"• លទ្ធផល៖ **{payment_status}**"
-    )
-  except Exception as e:
-    return f"⚠️ មិនអាចឆែកស្ថានភាព `{tran_id}` បានទេ៖ `{str(e)}`"
-
-
-def find_aba_qr_bg():
-  for name in ("aba_qr_bg.jpg", "aba_qr_bg.jpeg", "aba_qr_bg.png"):
-    p = os.path.join(BASE_DIR, name)
-    if os.path.exists(p):
-      return p
-  return None
-
-
-def generate_qr_image(qr_text, output_path):
-  qr = qrcode.QRCode(
-      version=None,
-      error_correction=qrcode.constants.ERROR_CORRECT_M,
-      box_size=10,
-      border=2,
-  )
-  qr.add_data(qr_text)
-  qr.make(fit=True)
-  qr_img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
-
-  bg_path = find_aba_qr_bg()
-  if bg_path:
-    bg_img = Image.open(bg_path).convert("RGB")
-    bg_w, bg_h = bg_img.size
-
-    qr_size = int(min(bg_w, bg_h) * 0.42)
-    qr_resized = qr_img.resize((qr_size, qr_size), Image.Resampling.LANCZOS)
-
-    paste_x = (bg_w - qr_size) // 2
-    paste_y = int(bg_h * 0.50) - (qr_size // 2)
-
-    bg_img.paste(qr_resized, (paste_x, paste_y))
-    bg_img.save(output_path, format="JPEG", quality=95)
-  else:
-    qr_img.save(output_path, format="JPEG", quality=95)
-
-
 def generate_invoice_image(chat_id, template_filename, brand_name):
   data = user_data[chat_id]
   current_date = "កាលបរិច្ឆេទ : " + datetime.now().strftime("%d / %m / %Y")
   output_path = None
-  qr_path = None
 
   try:
     img_path = os.path.join(BASE_DIR, template_filename)
@@ -625,56 +613,19 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
     output_path = os.path.join(BASE_DIR, f"invoice_{chat_id}.jpg")
     img.save(output_path, format="JPEG", quality=95)
 
-    prefix = "SAL" if brand_name == "The Sal" else "PSC"
-    tran_id = f"{prefix}{datetime.now().strftime('%y%m%d%H%M%S')}{chat_id}"
-    transactions_store[tran_id] = {
-        "brand": brand_name,
-        "amount_num": total_num,
-        "amount_str": c_total,
-        "customer": c_name,
-    }
-
-    qr_payload, api_notice = request_aba_purchase_qr(
-        tran_id, total_num, data, brand_name
-    )
-    qr_path = os.path.join(BASE_DIR, f"qr_{chat_id}.jpg")
-    generate_qr_image(qr_payload, qr_path)
-
-    with open(output_path, "rb") as inv_photo, open(qr_path, "rb") as qr_photo:
-      media = [
-          types.InputMediaPhoto(
-              inv_photo,
-              caption=f"🧾 វិក្កយបត្រហាង **{brand_name}** | Ref: `{tran_id}`",
-              parse_mode="Markdown",
-          ),
-          types.InputMediaPhoto(
-              qr_photo,
-              caption=f"💳 ABA KHQR ({c_total}) | Ref: `{tran_id}`",
-              parse_mode="Markdown",
-          ),
-      ]
-      bot.send_media_group(chat_id, media)
-
-    check_markup = types.InlineKeyboardMarkup()
-    check_markup.add(
-        types.InlineKeyboardButton(
-            "🔄 ឆែកស្ថានភាពបង់ប្រាក់", callback_data=f"check_pay:{tran_id}"
-        )
-    )
-    extra_note = f"\n{api_notice}" if api_notice else ""
-    bot.send_message(
-        chat_id,
-        f"📌 លេខយោងប្រតិបត្តិការ៖ `{tran_id}`\nទឹកប្រាក់៖ **{c_total}**{extra_note}",
-        parse_mode="Markdown",
-        reply_markup=check_markup,
-    )
+    with open(output_path, "rb") as photo:
+      bot.send_photo(
+          chat_id,
+          photo,
+          caption=f"🧾 **នេះជារូបភាពវិក្កយបត្ររបស់អ្នកហាង {brand_name}!**",
+          parse_mode="Markdown",
+      )
 
   except Exception as e:
     bot.send_message(chat_id, f"⚠️ មានបញ្ហាក្នុងការបង្កើតរូបភាព៖ {str(e)}")
   finally:
-    for p in (output_path, qr_path):
-      if p and os.path.exists(p):
-        os.remove(p)
+    if output_path and os.path.exists(output_path):
+      os.remove(output_path)
 
   user_data[chat_id] = {"items_list": []}
   ask_item(chat_id)
