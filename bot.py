@@ -13,9 +13,24 @@ user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INCOME_FILE = os.path.join(BASE_DIR, "monthly_income.json")
 
+KHMER_MONTHS = {
+    1: "មករា",
+    2: "កុម្ភៈ",
+    3: "មីនា",
+    4: "មេសា",
+    5: "ឧសភា",
+    6: "មិថុនា",
+    7: "កក្កដា",
+    8: "សីហា",
+    9: "កញ្ញា",
+    10: "តុលា",
+    11: "វិច្ឆិកា",
+    12: "ធ្នូ",
+}
+
 
 # ==========================================
-# 💰 មុខងារបូកលុយចូលប្រចាំខែក្នុង Group
+# 💰 មុខងារបូកលុយចូលប្រចាំខែ & ប្រចាំឆ្នាំ
 # ==========================================
 def load_income_data():
   if os.path.exists(INCOME_FILE):
@@ -43,7 +58,6 @@ def is_incoming_payment_text(text):
     return False
   low = text.lower()
 
-  # បដិសេធសារដែលជាលុយចេញ ឬដកប្រាក់
   out_keywords = [
       "sent ",
       "transferred to",
@@ -60,8 +74,8 @@ def is_incoming_payment_text(text):
   if any(k in low for k in out_keywords):
     return False
 
-  # ទទួលយកសារដែលមានសញ្ញាលុយចូល
   in_keywords = [
+      "ត្រូវបានបង់ដោយ",
       "received",
       "credited",
       "credit",
@@ -84,7 +98,6 @@ def extract_amounts_from_text(text):
   usd_total = 0.0
   khr_total = 0.0
 
-  # រក USD ដូចជា $15.50 ឬ 15.50$ ឬ 15.50 USD
   for m in re.finditer(
       r"\$\s*([\d,]+(?:\.[\d]+)?)|([\d,]+(?:\.[\d]+)?)\s*(?:\$|usd)\b",
       text,
@@ -96,7 +109,6 @@ def extract_amounts_from_text(text):
     except ValueError:
       pass
 
-  # រក KHR ដូចជា 50,000៛ ឬ 50000 ៛ ឬ 50000 KHR
   for m in re.finditer(
       r"([\d,]+(?:\.[\d]+)?)\s*(?:៛|khr)\b", text, flags=re.IGNORECASE
   ):
@@ -116,27 +128,92 @@ def format_khr(amount):
   return f"{val:,.2f}៛"
 
 
-@bot.message_handler(commands=["month", "income"])
-def cmd_monthly_income(message):
-  chat_id = str(message.chat.id)
-  parts = (message.text or "").strip().split()
-  month_key = parts[1] if len(parts) > 1 else datetime.now().strftime("%Y-%m")
+def build_income_menu_markup():
+  markup = types.InlineKeyboardMarkup()
+  markup.row(
+      types.InlineKeyboardButton("ប្រចាំខែ", callback_data="inc_month_now"),
+      types.InlineKeyboardButton("ប្រចាំឆ្នាំ", callback_data="inc_year_now"),
+  )
+  markup.row(
+      types.InlineKeyboardButton(
+          "រើសខែដែចង់បូក", callback_data="inc_pick_month"
+      )
+  )
+  return markup
 
-  chat_months = income_data.get(chat_id, {})
-  entry = chat_months.get(month_key, {"usd": 0.0, "khr": 0.0, "count": 0})
 
+def build_pick_month_markup(year_str):
+  markup = types.InlineKeyboardMarkup(row_width=3)
+  buttons = []
+  for m_num in range(1, 13):
+    m_key = f"{year_str}-{m_num:02d}"
+    label = f"ខែ{KHMER_MONTHS[m_num]} ({m_num:02d})"
+    buttons.append(
+        types.InlineKeyboardButton(label, callback_data=f"inc_sel_month:{m_key}")
+    )
+  markup.add(*buttons)
+  markup.row(
+      types.InlineKeyboardButton("⬅️ ត្រឡប់ក្រោយ", callback_data="inc_back_menu")
+  )
+  return markup
+
+
+def get_month_summary_text(chat_id_str, month_key):
+  entry = income_data.get(chat_id_str, {}).get(
+      month_key, {"usd": 0.0, "khr": 0.0, "count": 0}
+  )
   usd_val = float(entry.get("usd", 0.0))
   khr_val = float(entry.get("khr", 0.0))
   count_val = int(entry.get("count", 0))
 
-  reply = (
-      f"📊 **សរុបលុយចូលប្រចាំខែ (`{month_key}`)**\n\n"
+  try:
+    yr, mo = month_key.split("-")
+    kh_label = f"ខែ{KHMER_MONTHS.get(int(mo), mo)} {yr}"
+  except Exception:
+    kh_label = month_key
+
+  return (
+      f"📊 **សរុបលុយចូលប្រចាំខែ — {kh_label} (`{month_key}`)**\n\n"
       f"💵 **USD៖** `{format_usd(usd_val)}`\n"
       f"🇰🇭 **KHR៖** `{format_khr(khr_val)}`\n"
-      f"🔢 **ចំនួនប្រតិបត្តិការចូល៖** `{count_val}` ដង\n\n"
-      "_មើលខែផ្សេង៖ `/month 2026-12`_"
+      f"🔢 **ចំនួនប្រតិបត្តិការចូល៖** `{count_val}` ដង"
   )
-  bot.reply_to(message, reply, parse_mode="Markdown")
+
+
+def get_year_summary_text(chat_id_str, year_str):
+  chat_months = income_data.get(chat_id_str, {})
+  usd_sum = 0.0
+  khr_sum = 0.0
+  count_sum = 0
+
+  for m_key, entry in chat_months.items():
+    if str(m_key).startswith(f"{year_str}-"):
+      usd_sum += float(entry.get("usd", 0.0))
+      khr_sum += float(entry.get("khr", 0.0))
+      count_sum += int(entry.get("count", 0))
+
+  return (
+      f"📈 **សរុបលុយចូលប្រចាំឆ្នាំ (`{year_str}`)**\n\n"
+      f"💵 **USD៖** `{format_usd(usd_sum)}`\n"
+      f"🇰🇭 **KHR៖** `{format_khr(khr_sum)}`\n"
+      f"🔢 **ចំនួនប្រតិបត្តិការចូល៖** `{count_sum}` ដង"
+  )
+
+
+@bot.message_handler(commands=["month", "income"])
+def cmd_monthly_income(message):
+  chat_id_str = str(message.chat.id)
+  now = datetime.now()
+  parts = (message.text or "").strip().split()
+
+  if len(parts) > 1 and re.fullmatch(r"\d{4}-\d{2}", parts[1]):
+    text_out = get_month_summary_text(chat_id_str, parts[1])
+  else:
+    text_out = get_month_summary_text(chat_id_str, now.strftime("%Y-%m"))
+
+  bot.reply_to(
+      message, text_out, parse_mode="Markdown", reply_markup=build_income_menu_markup()
+  )
 
 
 @bot.message_handler(
@@ -144,7 +221,6 @@ def cmd_monthly_income(message):
     content_types=["text", "photo", "document"],
 )
 def track_group_incoming_money(message):
-  # មិនបូកសារពាក្យបញ្ជា /month ឬ /income
   text = (message.text or message.caption or "").strip()
   if not text or text.startswith("/"):
     return
@@ -335,6 +411,72 @@ def process_item(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
   chat_id = call.message.chat.id
+  chat_id_str = str(chat_id)
+  now = datetime.now()
+
+  # ប៊ូតុងរបាយការណ៍លុយចូល (មិនប៉ះពាល់ដល់ step handler របស់វិក្កយបត្រទេ)
+  if call.data == "inc_month_now":
+    bot.answer_callback_query(call.id, "កំពុងបង្ហាញប្រចាំខែ...")
+    txt = get_month_summary_text(chat_id_str, now.strftime("%Y-%m"))
+    bot.edit_message_text(
+        txt,
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=build_income_menu_markup(),
+    )
+    return
+
+  if call.data == "inc_year_now":
+    bot.answer_callback_query(call.id, "កំពុងបង្ហាញប្រចាំឆ្នាំ...")
+    txt = get_year_summary_text(chat_id_str, now.strftime("%Y"))
+    bot.edit_message_text(
+        txt,
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=build_income_menu_markup(),
+    )
+    return
+
+  if call.data == "inc_pick_month":
+    bot.answer_callback_query(call.id, "ជ្រើសរើសខែដែលចង់បូក")
+    yr_str = now.strftime("%Y")
+    bot.edit_message_text(
+        f"📅 **រើសខែដែចង់បូក (ឆ្នាំ `{yr_str}`)**",
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=build_pick_month_markup(yr_str),
+    )
+    return
+
+  if call.data and call.data.startswith("inc_sel_month:"):
+    m_key = call.data.split(":", 1)[1]
+    bot.answer_callback_query(call.id, f"បូកលុយខែ {m_key}")
+    txt = get_month_summary_text(chat_id_str, m_key)
+    yr_str = m_key.split("-")[0] if "-" in m_key else now.strftime("%Y")
+    bot.edit_message_text(
+        txt,
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=build_pick_month_markup(yr_str),
+    )
+    return
+
+  if call.data == "inc_back_menu":
+    bot.answer_callback_query(call.id, "ត្រឡប់ទៅម៉ឺនុយ")
+    txt = get_month_summary_text(chat_id_str, now.strftime("%Y-%m"))
+    bot.edit_message_text(
+        txt,
+        chat_id,
+        call.message.message_id,
+        parse_mode="Markdown",
+        reply_markup=build_income_menu_markup(),
+    )
+    return
+
   bot.clear_step_handler_by_chat_id(chat_id)
 
   if call.data == "add_more":
