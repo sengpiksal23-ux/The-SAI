@@ -14,36 +14,42 @@ TOKEN = "9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q"
 bot = telebot.TeleBot(TOKEN)
 
 # ==========================================
-# ⚙️ ការកំណត់ ABA PayWay / KHQR (បំពេញពេលទទួលបានពី ABA)
+# ⚙️ ABA PayWay Sandbox Credentials
 # ==========================================
-ABA_ENV = os.environ.get(
-    "ABA_ENV", "sandbox"
-)  # "sandbox" ឬ "production"
-ABA_MERCHANT_ID = os.environ.get("ABA_MERCHANT_ID", "")
-ABA_API_KEY = os.environ.get("ABA_API_KEY", "")
-ABA_RSA_PRIVATE_KEY = os.environ.get(
-    "ABA_RSA_PRIVATE_KEY", ""
-)  # ប្រើបើ API version របស់ ABA តម្រូវ RSA
-
-ABA_QR_API_URL = os.environ.get(
-    "ABA_QR_API_URL",
-    (
-        "https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/generate-qr"
-        if ABA_ENV == "sandbox"
-        else "https://checkout.payway.com.kh/api/payment-gateway/v1/payments/generate-qr"
-    ),
+ABA_MERCHANT_ID = os.environ.get("ABA_MERCHANT_ID", "ec480930")
+ABA_PUBLIC_KEY = os.environ.get(
+    "ABA_PUBLIC_KEY", "50FB3A0D89567C8E6D7D765315F639921D7B2465"
 )
-ABA_CHECK_API_URL = os.environ.get(
-    "ABA_CHECK_API_URL",
-    (
-        "https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/check-transaction"
-        if ABA_ENV == "sandbox"
-        else "https://checkout.payway.com.kh/api/payment-gateway/v1/payments/check-transaction"
-    ),
+ABA_RSA_PRIVATE_KEY = os.environ.get(
+    "ABA_RSA_PRIVATE_KEY",
+    """-----BEGIN RSA PRIVATE KEY-----
+MIICXAIBAAKBgQDlzpS7MLtLoz62CBi2Yo77W2CwT0XLLeeuxS/2BNnYOTC5HEZt
+iPgePI3OTd/jpqZS9tZDAEGnxen7U4gtRA5AKM+ONbPaV2X4jcX/PcOEcb2DsFfI
+YDRF3VGbcnjJmkw0d0eusYj/AeyNucVuSqzJTE3j7ZRigQxdI9ZEgFaL6wIDAQAB
+AoGAUjB7EyPPqLKeyB3HMNu5BX7d6tC/RnaJiQEvMQ71FpcFrP7G1YAKNU407Vb+
+vv2oOL3dTaM22Bk5oNB0QLQ5X91yQu+N7TTNCOjBxbV2fhRxKbpg4UE54HmpInjY
+G4Jn2jlSlmxEHoNWxnLwYW+MRX1K1psZjo8VXDoeuq7q3XECQQD3AH3exdYKdoNd
+8n3evnSsisaMGy70Am30z9d/snjxJi54CsjjTa9KX9sANKQEhMEcs/nfQm5bzYQN
+7hbQJ56JAkEA7i27NHCPC5YsgN7kUlZQq1qq7cBVSk1p6D/AaOwUUnqQQZzcYawd
+quNM/WdetFGLxITICOEUMcjowNup/reZ0wJBANITBfrBcjDF6SavBiS7AUp6YTFq
+MT3xDwnG97aw2THoUl9gdMj2Gl78NavwGYuKSSAbZipfOrMzkNu0Ioz5FVkCQFQX
+22f5cdfybsYVbGHRzeuiOIV3CeYRDRqOH74r1EUGtxYjbwAhR9xFIrK5o4tg20tI
+YmQYLAwj1mH5bLzdUDcCQDcQx+VTQvDCafhMaZIx0rgT0YZFdRozPlEN1Bwz3eED
+rHSyL1gQGnENbA0BU0ZuICOFE+cdTuNOJpAF+CgMs/s=
+-----END RSA PRIVATE KEY-----""",
+)
+
+ABA_PURCHASE_URL = os.environ.get(
+    "ABA_PURCHASE_URL",
+    "https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/purchase",
+)
+ABA_CHECK_URL = os.environ.get(
+    "ABA_CHECK_URL",
+    "https://checkout-sandbox.payway.com.kh/api/payment-gateway/v1/payments/check-transaction",
 )
 
 user_data = {}
-transactions_store = {}  # រក្សាទុកព័ត៌មាន tran_id បណ្ដោះអាសន្នសម្រាប់ឆែកការទូទាត់
+transactions_store = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -65,11 +71,6 @@ def format_usd(amount):
 
 
 def parse_item_line(line):
-  """
-    ទទួលបានទាំង:
-      - ៣ ផ្នែក: ឈ្មោះ | ចំនួន | តម្លៃរាយ  -> គណនាតម្លៃសរុបស្វ័យប្រវត្តិ (qty * price)
-      - ៤ ផ្នែក: ឈ្មោះ | ចំនួន | តម្លៃរាយ | តម្លៃសរុប
-    """
   parts = [p.strip() for p in line.split("|")]
   name = parts[0] if len(parts) > 0 else ""
   qty_raw = parts[1] if len(parts) > 1 else "1"
@@ -353,90 +354,107 @@ def show_preview_summary(chat_id):
 
 
 # ==========================================
-# 🔐 ABA PayWay / KHQR Hash & API Helpers
+# 🔐 ABA PayWay Sandbox Purchase & Check API
 # ==========================================
-def generate_aba_hash(raw_string, api_key=ABA_API_KEY):
-  """
-    បង្កើត HMAC-SHA512 Base64 hash (កែលំដាប់ field concatenation តាម ABA PayWay API Docs)។
-    ប្រសិនបើ version របស់បងប្រើ RSA signature ជំនួស hash នេះ អាចប្រើ ABA_RSA_PRIVATE_KEY នៅទីនេះ។
-    """
+def generate_aba_hash(raw_string, key=ABA_PUBLIC_KEY):
   digest = hmac.new(
-      api_key.encode("utf-8"), raw_string.encode("utf-8"), hashlib.sha512
+      key.encode("utf-8"), raw_string.encode("utf-8"), hashlib.sha512
   ).digest()
   return base64.b64encode(digest).decode("utf-8")
 
 
-def get_khqr_payload_from_api(tran_id, amount_num, brand_name):
+def request_aba_purchase_qr(tran_id, amount_num, customer_info, brand_name):
   """
-    ហៅ ABA PayWay Generate QR API។
-    បើមិនទាន់បំពេញ Merchant ID / API Key ទេ នឹងត្រឡប់ string គំរូបណ្ដោះអាសន្ន។
+    ហៅ ABA PayWay Sandbox /v1/payments/purchase។
+    ប្រសិនបើ API ត្រឡប់ qrString / qr_string / abapay_deeplink / checkout_url នឹងប្រើសម្រាប់បង្កើត QR។
     """
   amount_str = f"{float(amount_num):.2f}"
-  if not ABA_MERCHANT_ID or not ABA_API_KEY or not ABA_QR_API_URL:
-    return f"KHQR_PREVIEW|{brand_name}|{tran_id}|{amount_str} USD"
-
   req_time = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-  # កែលំដាប់ raw_string និង field payload ឱ្យត្រូវនឹង ABA PayWay API specification ពិតប្រាកដ
-  raw_for_hash = f"{req_time}{ABA_MERCHANT_ID}{tran_id}{amount_str}USD"
-  payload = {
+  payment_option = "abapay_khqr"
+  currency = "USD"
+
+  # លំដាប់ hash string ធម្មតារបស់ ABA PayWay (អាចកែតាមឯកសារ PayWay version ពិតប្រាកដ)
+  raw_for_hash = (
+      f"{req_time}{ABA_MERCHANT_ID}{tran_id}{amount_str}{payment_option}{currency}"
+  )
+  req_hash = generate_aba_hash(raw_for_hash, ABA_PUBLIC_KEY)
+
+  form_data = {
       "req_time": req_time,
       "merchant_id": ABA_MERCHANT_ID,
       "tran_id": tran_id,
       "amount": amount_str,
-      "currency": "USD",
-      "hash": generate_aba_hash(raw_for_hash),
+      "currency": currency,
+      "payment_option": payment_option,
+      "firstname": customer_info.get("name", "") or "Customer",
+      "phone": customer_info.get("phone", ""),
+      "hash": req_hash,
   }
 
-  resp = requests.post(ABA_QR_API_URL, json=payload, timeout=20)
-  resp.raise_for_status()
-  res_data = resp.json()
+  try:
+    resp = requests.post(
+        ABA_PURCHASE_URL,
+        data=form_data,
+        headers={"Accept": "application/json"},
+        timeout=20,
+    )
+    try:
+      res_json = resp.json()
+    except ValueError:
+      res_json = {"raw_text": resp.text}
 
-  # កែ key ឱ្យត្រូវនឹង JSON response របស់ ABA (ឧ. qrString / qr_string / data.qrString)
-  return (
-      res_data.get("qrString")
-      or res_data.get("qr_string")
-      or res_data.get("data", {}).get("qrString")
-      or res_data.get("data", {}).get("qr_string")
-      or str(res_data)
-  )
+    qr_val = (
+        res_json.get("qrString")
+        or res_json.get("qr_string")
+        or res_json.get("abapay_deeplink")
+        or res_json.get("checkout_url")
+        or (res_json.get("data", {}) if isinstance(res_json.get("data"), dict) else {}).get("qrString")
+        or (res_json.get("data", {}) if isinstance(res_json.get("data"), dict) else {}).get("qr_string")
+    )
+    if qr_val:
+      return str(qr_val), None
+
+    # ប្រសិនបើ Sandbox ទាមទារ field ឬ hash format ផ្សេង នឹងបង្ហាញព័ត៌មានឆ្លើយតបដើម្បីងាយស្រួលកែ
+    return (
+        f"ABA_SANDBOX|MID:{ABA_MERCHANT_ID}|{brand_name}|{tran_id}|{amount_str} USD",
+        f"⚠️ ABA API response: `{str(res_json)[:300]}`",
+    )
+  except Exception as e:
+    return (
+        f"ABA_SANDBOX|MID:{ABA_MERCHANT_ID}|{brand_name}|{tran_id}|{amount_str} USD",
+        f"⚠️ មិនអាចតភ្ជាប់ ABA Purchase API បាន៖ `{str(e)}`",
+    )
 
 
 def check_aba_payment_status(tran_id):
-  """
-    ហៅ ABA PayWay Check Transaction API ដើម្បីពិនិត្យថាតើអតិថិជនបានបង់ប្រាក់ហើយឬនៅ។
-    """
   info = transactions_store.get(tran_id, {})
-  if not ABA_MERCHANT_ID or not ABA_API_KEY or not ABA_CHECK_API_URL:
-    return (
-        f"ℹ️ **ស្ថានភាពបណ្ដោះអាសន្ន (មិនទាន់មាន ABA API Key)៖**\n"
-        f"• Ref: `{tran_id}`\n"
-        f"• ទឹកប្រាក់៖ `{info.get('amount_str', 'N/A')}`\n"
-        f"• ស្ថានភាព៖ *រង់ចាំភ្ជាប់ ABA PayWay API ពិត*"
-    )
-
   req_time = datetime.utcnow().strftime("%Y%m%d%H%M%S")
   raw_for_hash = f"{req_time}{ABA_MERCHANT_ID}{tran_id}"
   payload = {
       "req_time": req_time,
       "merchant_id": ABA_MERCHANT_ID,
       "tran_id": tran_id,
-      "hash": generate_aba_hash(raw_for_hash),
+      "hash": generate_aba_hash(raw_for_hash, ABA_PUBLIC_KEY),
   }
 
   try:
-    resp = requests.post(ABA_CHECK_API_URL, json=payload, timeout=20)
-    resp.raise_for_status()
-    res_data = resp.json()
+    resp = requests.post(ABA_CHECK_URL, json=payload, timeout=20)
+    try:
+      res_data = resp.json()
+    except ValueError:
+      res_data = {"raw_text": resp.text}
+
     payment_status = (
         res_data.get("payment_status")
-        or res_data.get("data", {}).get("payment_status")
-        or res_data.get("status", {}).get("message")
-        or str(res_data)
+        or (res_data.get("data", {}) if isinstance(res_data.get("data"), dict) else {}).get("payment_status")
+        or (res_data.get("status", {}) if isinstance(res_data.get("status"), dict) else {}).get("message")
+        or str(res_data)[:250]
     )
     return (
-        f"🔎 **លទ្ធផលឆែកការទូទាត់៖**\n"
+        f"🔎 **ស្ថានភាពបង់ប្រាក់ (Sandbox):**\n"
         f"• Ref: `{tran_id}`\n"
-        f"• ស្ថានភាព៖ **{payment_status}**"
+        f"• ទឹកប្រាក់៖ `{info.get('amount_str', 'N/A')}`\n"
+        f"• លទ្ធផល៖ **{payment_status}**"
     )
   except Exception as e:
     return f"⚠️ មិនអាចឆែកស្ថានភាព `{tran_id}` បានទេ៖ `{str(e)}`"
@@ -608,7 +626,7 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
     img.save(output_path, format="JPEG", quality=95)
 
     prefix = "SAL" if brand_name == "The Sal" else "PSC"
-    tran_id = f"{prefix}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{chat_id}"
+    tran_id = f"{prefix}{datetime.now().strftime('%y%m%d%H%M%S')}{chat_id}"
     transactions_store[tran_id] = {
         "brand": brand_name,
         "amount_num": total_num,
@@ -616,7 +634,9 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
         "customer": c_name,
     }
 
-    qr_payload = get_khqr_payload_from_api(tran_id, total_num, brand_name)
+    qr_payload, api_notice = request_aba_purchase_qr(
+        tran_id, total_num, data, brand_name
+    )
     qr_path = os.path.join(BASE_DIR, f"qr_{chat_id}.jpg")
     generate_qr_image(qr_payload, qr_path)
 
@@ -641,9 +661,10 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
             "🔄 ឆែកស្ថានភាពបង់ប្រាក់", callback_data=f"check_pay:{tran_id}"
         )
     )
+    extra_note = f"\n{api_notice}" if api_notice else ""
     bot.send_message(
         chat_id,
-        f"📌 លេខយោងប្រតិបត្តិការ៖ `{tran_id}`\nទឹកប្រាក់៖ **{c_total}**",
+        f"📌 លេខយោងប្រតិបត្តិការ៖ `{tran_id}`\nទឹកប្រាក់៖ **{c_total}**{extra_note}",
         parse_mode="Markdown",
         reply_markup=check_markup,
     )
