@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 import re
+import time
 from PIL import Image, ImageDraw, ImageFont
 import telebot
 from telebot import types
@@ -22,8 +23,10 @@ def get_khmer_date_str():
   return "កាលបរិច្ឆេទ : " + now_kh().strftime("%d / %m / %Y")
 
 
-TOKEN = "9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q"
-bot = telebot.TeleBot(TOKEN)
+TOKEN = os.environ.get(
+    "BOT_TOKEN", "9274188079:AAGDENXlzH4vlYUQwLFoK0d0zVBLH7tbX-Q"
+)
+bot = telebot.TeleBot(TOKEN, parse_mode=None)
 
 user_data = {}
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -62,8 +65,11 @@ def load_income_data():
 
 
 def save_income_data(data):
-  with open(INCOME_FILE, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
+  try:
+    with open(INCOME_FILE, "w", encoding="utf-8") as f:
+      json.dump(data, f, ensure_ascii=False, indent=2)
+  except Exception:
+    pass
 
 
 income_data = load_income_data()
@@ -360,6 +366,11 @@ def wrap_text_by_pixel_width(draw, text, font, max_width):
   return lines if lines else [str(text)]
 
 
+@bot.message_handler(commands=["ping"])
+def cmd_ping(message):
+  bot.reply_to(message, "✅ Bot កំពុងដំណើរការធម្មតា!")
+
+
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
   chat_id = message.chat.id
@@ -375,12 +386,14 @@ def send_welcome(message):
               "👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL &"
               " P.S.C**"
           ),
+          parse_mode="Markdown",
       )
   else:
     bot.send_message(
         chat_id,
         "👋 **សួស្តី! សូមស្វាគមន៍មកកាន់ប្រព័ន្ធគ្រប់គ្រងវិក្កយបត្រហាង THE SAL &"
         " P.S.C**",
+        parse_mode="Markdown",
     )
 
   ask_item(chat_id)
@@ -916,4 +929,20 @@ def generate_invoice_image(chat_id, template_filename, brand_name):
   ask_item(chat_id)
 
 
-bot.infinity_polling()
+if __name__ == "__main__":
+  try:
+    bot.remove_webhook()
+  except Exception:
+    pass
+
+  while True:
+    try:
+      bot.polling(
+          non_stop=True,
+          skip_pending=True,
+          timeout=30,
+          long_polling_timeout=25,
+      )
+    except Exception as e:
+      print(f"Polling error: {e}")
+      time.sleep(5)
