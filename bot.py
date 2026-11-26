@@ -68,8 +68,8 @@ def save_income_data(data):
   try:
     with open(INCOME_FILE, "w", encoding="utf-8") as f:
       json.dump(data, f, ensure_ascii=False, indent=2)
-  except Exception:
-    pass
+  except Exception as e:
+    print(f"[SAVE ERROR] {e}")
 
 
 income_data = load_income_data()
@@ -112,6 +112,8 @@ def is_incoming_payment_text(text):
       "លុយចូល",
       "ទទួលបាន",
       "ចូលគណនី",
+      "បានបង់",
+      "បង់ប្រាក់",
   ]
   return any(k in low for k in in_keywords)
 
@@ -188,6 +190,10 @@ def record_payment_message(chat_id, msg_id, msg_date_ts, text):
       seen_map[chat_key] = seen_ids[-2000:]
 
   save_income_data(income_data)
+  print(
+      f"[INCOME ADDED] chat={chat_key} month={month_key} "
+      f"usd=+{usd_found} khr=+{khr_found} total_usd={entry['usd']} total_khr={entry['khr']}"
+  )
   return usd_found, khr_found, True
 
 
@@ -429,6 +435,7 @@ def cmd_monthly_income(message):
 )
 def track_group_incoming_money(message):
   text = (message.text or message.caption or "").strip()
+  print(f"[GROUP MSG] chat={message.chat.id} mid={message.message_id} text={text[:80]!r}")
   record_payment_message(
       message.chat.id, message.message_id, message.date, text
   )
@@ -935,11 +942,12 @@ if __name__ == "__main__":
   except Exception:
     pass
 
+  print("THE SAL INVOICE Bot is running...")
   while True:
     try:
       bot.polling(
           non_stop=True,
-          skip_pending=True,
+          skip_pending=False,
           timeout=30,
           long_polling_timeout=25,
       )
