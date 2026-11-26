@@ -49,7 +49,7 @@ KHMER_MONTHS = {
 
 
 # ==========================================
-# 💰 មុខងារបូកលុយចូលប្រចាំខែ & ប្រចាំឆ្នាំ
+# 💰 មុខងារបូកលុយចូលប្រចាំខែ & ប្រចាំឆ្នាំ (ស្ងាត់ មិនរំខាន Group)
 # ==========================================
 def load_income_data():
   if os.path.exists(INCOME_FILE):
@@ -68,8 +68,8 @@ def save_income_data(data):
   try:
     with open(INCOME_FILE, "w", encoding="utf-8") as f:
       json.dump(data, f, ensure_ascii=False, indent=2)
-  except Exception as e:
-    print(f"[SAVE ERROR] {e}")
+  except Exception:
+    pass
 
 
 income_data = load_income_data()
@@ -102,6 +102,7 @@ def is_incoming_payment_text(text):
       "ត្រូវបានបង់ដោយ",
       "aba khqr",
       "khqr",
+      "payway",
       "received",
       "credited",
       "credit",
@@ -154,7 +155,7 @@ def format_khr(amount):
 
 
 def record_payment_message(chat_id, msg_id, msg_date_ts, text):
-  """កត់ត្រាលុយចូលម្ដងមួយសារដោយការពារមិនឱ្យបូកជាន់ message_id ដដែល។"""
+  """កត់ត្រាលុយចូលម្ដងមួយសារដោយស្ងាត់ ការពារមិនឱ្យបូកជាន់ message_id ដដែល។"""
   if not text or text.strip().startswith("/"):
     return 0.0, 0.0, False
   if not is_incoming_payment_text(text):
@@ -190,10 +191,6 @@ def record_payment_message(chat_id, msg_id, msg_date_ts, text):
       seen_map[chat_key] = seen_ids[-2000:]
 
   save_income_data(income_data)
-  print(
-      f"[INCOME ADDED] chat={chat_key} month={month_key} "
-      f"usd=+{usd_found} khr=+{khr_found} total_usd={entry['usd']} total_khr={entry['khr']}"
-  )
   return usd_found, khr_found, True
 
 
@@ -243,7 +240,7 @@ def get_month_summary_text(chat_id_str, month_key):
     kh_label = month_key
 
   return (
-      f"📊 **សរុបលុយចូលប្រចាំខែ — {kh_label} (`{month_key}`)**\n\n"
+      f"📊 **ប្រាក់សរុបដែលបូកហើយ — {kh_label} (`{month_key}`)**\n\n"
       f"💵 **USD៖** `{format_usd(usd_val)}`\n"
       f"🇰🇭 **KHR៖** `{format_khr(khr_val)}`\n"
       f"🔢 **ចំនួនប្រតិបត្តិការចូល៖** `{count_val}` ដង"
@@ -263,7 +260,7 @@ def get_year_summary_text(chat_id_str, year_str):
       count_sum += int(entry.get("count", 0))
 
   return (
-      f"📈 **សរុបលុយចូលប្រចាំឆ្នាំ (`{year_str}`)**\n\n"
+      f"📈 **ប្រាក់សរុបដែលបូកហើយ ប្រចាំឆ្នាំ (`{year_str}`)**\n\n"
       f"💵 **USD៖** `{format_usd(usd_sum)}`\n"
       f"🇰🇭 **KHR៖** `{format_khr(khr_sum)}`\n"
       f"🔢 **ចំនួនប្រតិបត្តិការចូល៖** `{count_sum}` ដង"
@@ -405,7 +402,15 @@ def send_welcome(message):
   ask_item(chat_id)
 
 
-@bot.message_handler(commands=["month", "income"], func=lambda m: True)
+@bot.message_handler(
+    func=lambda m: bool(
+        re.match(
+            r"^/(month|income)(?:@\w+)?(?:\s|$)",
+            (m.text or "").strip(),
+            flags=re.IGNORECASE,
+        )
+    )
+)
 def cmd_monthly_income(message):
   chat_id_str = str(message.chat.id)
   now = now_kh()
@@ -435,7 +440,6 @@ def cmd_monthly_income(message):
 )
 def track_group_incoming_money(message):
   text = (message.text or message.caption or "").strip()
-  print(f"[GROUP MSG] chat={message.chat.id} mid={message.message_id} text={text[:80]!r}")
   record_payment_message(
       message.chat.id, message.message_id, message.date, text
   )
